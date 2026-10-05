@@ -17,6 +17,7 @@ from ...db.models import (
     Participant,
 )
 from ...dependencies import (
+    authorize_keycloak_sync,
     get_db,
     get_settings_dep,
     require_admin_or_read_scope,
@@ -64,9 +65,11 @@ from ...services.did import (
     subject_id_of,
 )
 from ...services.issuance import (
+    HELD_FOR_ANOTHER_ORGANISATION,
     IssuanceError,
     active_data_subject_credential,
     deliver_to_custodian,
+    held_for_another_organisation,
 )
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.role_transition import (
@@ -681,6 +684,12 @@ async def issue_data_subject_credential(
     # id, which is what makes re-delivering free.
     existing_cred = await active_data_subject_credential(db, subject_did, data.role)
     if existing_cred is not None:
+        # **Only to the organisation it is linked to.** The same role from a
+        # second organisation matches the first one's credential (one DID per
+        # person), and re-delivering it disclosed that credential, whole, to
+        # the second organisation's custodian. Refused before any write.
+        if held_for_another_organisation(existing_cred, data.linked_participant_did):
+            raise HTTPException(status_code=409, detail=HELD_FOR_ANOTHER_ORGANISATION)
         return await _redeliver_data_subject_credential(
             db, settings, data=data, subject_did=subject_did, cred=existing_cred
         )
@@ -1045,8 +1054,18 @@ async def revoke_credential(
 async def keycloak_sync(
     data: KeycloakSyncRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_keycloak_sync),
+    principal: Principal = Depends(require_keycloak_sync),
 ):
+    # Bounded before any lookup: an organisation binds logins only to its own
+    # members' DIDs, and a DID it does not hold answers 403, never 404
+    # (ADR-0026, amended 2026-10-05).
+    await authorize_keycloak_sync(
+        db,
+        principal,
+        data.did,
+        keycloak_realm=data.keycloak_realm,
+        keycloak_user_id=data.keycloak_user_id,
+    )
     did_result = await db.execute(select(Did).where(Did.did == data.did))
     did_record = did_result.scalar_one_or_none()
     if not did_record:

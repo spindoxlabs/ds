@@ -98,7 +98,8 @@ def plain_service_transition(principal: Principal, act: str) -> None:
 
     The grants `svc-ds-onboarding` held for acts that belong to one organisation
     (credential issuance, the offer audience read, disclosure records,
-    provenance writes) moved to that organisation's collector client. A plain
+    provenance writes, binding a member's login to their DID) moved to that
+    organisation's collector client. A plain
     service names no organisation, so outside ``DS_ENV=dev`` it is refused; in
     dev it is accepted and a warning names the client, so the transition is
     visible until the caller moves. Organisations and persons pass untouched.

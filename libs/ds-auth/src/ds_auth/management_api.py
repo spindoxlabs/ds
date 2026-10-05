@@ -97,6 +97,11 @@ MEMBERSHIPS_WRITE_SCOPE = "identity-registry.memberships.write"
 #: Issue, transition or revoke a data-subject credential linked to the caller's
 #: own organisation (identity-registry).
 CREDENTIALS_WRITE_SCOPE = "identity-registry.credentials.write"
+#: Bind a Keycloak login to a DID of the caller's own organisation's members
+#: (identity-registry `POST /admin/keycloak/sync`) — the (realm, user id) → DID
+#: mapping a person route's binding reads (ADR-0024). An organisation's token
+#: binds only a DID in its own namespace (ADR-0026, amended 2026-10-05).
+KEYCLOAK_SYNC_SCOPE = "identity-registry.keycloak.sync"
 #: Register a subject's standing decision (connector `POST /consent/admin/shares`,
 #: `POST /consent/request`).
 CONSENT_PROVISION_SCOPE = "connector.consent.provision"
@@ -116,6 +121,7 @@ PROVENANCE_WRITE_SCOPE = "provenance.write"
 SCOPE_AUDIENCES: dict[str, str] = {
     MEMBERSHIPS_WRITE_SCOPE: IDENTITY_REGISTRY_AUDIENCE,
     CREDENTIALS_WRITE_SCOPE: IDENTITY_REGISTRY_AUDIENCE,
+    KEYCLOAK_SYNC_SCOPE: IDENTITY_REGISTRY_AUDIENCE,
     CONSENT_PROVISION_SCOPE: CONNECTOR_AUDIENCE,
     CONSENT_COLLECTOR_READ_SCOPE: CONNECTOR_AUDIENCE,
     CONSENT_AUDIENCE_SCOPE: CONNECTOR_AUDIENCE,
@@ -207,7 +213,7 @@ ORGANISATION_CLIENT_SCOPES: tuple[str, ...] = (
 #: no ds audience and is refused by every ds service.
 COLLECTOR_CLIENT_DEFAULT_SCOPES: tuple[str, ...] = ()
 
-#: Each requested **alone** (one scope, one audience, one receiver). The last four
+#: Each requested **alone** (one scope, one audience, one receiver). The last five
 #: moved here from the plain `svc-ds-onboarding` client, so no secret is shared
 #: across onboarding operators and every act is attributable to an organisation.
 COLLECTOR_CLIENT_OPTIONAL_SCOPES: tuple[str, ...] = (
@@ -218,6 +224,7 @@ COLLECTOR_CLIENT_OPTIONAL_SCOPES: tuple[str, ...] = (
     CONSENT_AUDIENCE_SCOPE,
     DISCLOSURE_RECORD_SCOPE,
     PROVENANCE_WRITE_SCOPE,
+    KEYCLOAK_SYNC_SCOPE,
 )
 
 #: The grants the plain `svc-ds-onboarding` client held for acts that belong to an
@@ -228,6 +235,7 @@ ONBOARDING_TRANSITION_SCOPES: tuple[str, ...] = (
     CONSENT_AUDIENCE_SCOPE,
     DISCLOSURE_RECORD_SCOPE,
     PROVENANCE_WRITE_SCOPE,
+    KEYCLOAK_SYNC_SCOPE,
 )
 
 

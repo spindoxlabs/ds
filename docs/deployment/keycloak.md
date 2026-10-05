@@ -151,7 +151,8 @@ bound to. So, outside `DS_ENV=dev`:
 
 - the token must carry `sub`, the Keycloak user id. It is the binding key, and the registry's
   `keycloak_mappings` row for (realm, user id) is what onboarding writes
-  (`POST /admin/keycloak/sync`);
+  (`POST /admin/keycloak/sync`), as the organisation's collector client and only for a DID
+  holding a credential linked to that organisation (ADR-0026, amended 2026-10-05);
 - it must carry the audiences of `svc-ds-connector`, `svc-ds-provenance` **and**
   `svc-ds-identity-registry`. The mapper above provides all three;
 - a service that acts for a person forwards that person's token. A service token beside the
@@ -203,7 +204,7 @@ A host realm declares them itself (posture B).
 | client | when | `sub` | default scopes | optional scopes |
 |---|---|---|---|---|
 | `svc-ds-connector-<alias>` | `participant_context_id` set | the organisation's DID | the connector's service grants (`ds_auth.ORGANISATION_CLIENT_DEFAULT_SCOPES`) | the 7 `management-api:*`, `edc.management`, `connector.consent.provision`, `connector.consent.collector.read`, `connector.provider.write` |
-| `svc-ds-collector-<alias>` | also `collects_consent: true` | the organisation's DID | **none** | `identity-registry.memberships.write`, `identity-registry.credentials.write`, `connector.consent.provision`, `connector.consent.collector.read`, `connector.consent.audience`, `connector.disclosure.record`, `provenance.write` |
+| `svc-ds-collector-<alias>` | also `collects_consent: true` | the organisation's DID | **none** | `identity-registry.memberships.write`, `identity-registry.credentials.write`, `connector.consent.provision`, `connector.consent.collector.read`, `connector.consent.audience`, `connector.disclosure.record`, `provenance.write`, `identity-registry.keycloak.sync` |
 
 The collector client is the organisation's **onboarding** identity
 ([ADR-0026](../decisions/ADR-0026-an-organisation-acts-through-its-collector-client-one-audience-per-scope.md)).
@@ -230,6 +231,7 @@ For a host realm (posture B), declare the collector client in your own client fi
     - connector.consent.audience
     - connector.disclosure.record
     - provenance.write
+    - identity-registry.keycloak.sync
   hardcoded_claims:
     sub: did:web:rec.example.org
 ```
@@ -238,12 +240,21 @@ On the organisation client, move `connector.consent.provision` and `connector.pr
 to `optional_scopes`, and add `connector.consent.collector.read` there. The scope audiences
 need celine-policies with scope-level audiences, which `edc.management` already requires.
 
+`identity-registry.keycloak.sync` binds a member's login to their DID (the mapping a person
+route reads, ADR-0024). Since 2026-10-05 it is a collector act with the registry as its
+audience: the registry accepts it from an organisation only for a DID that holds a
+credential, not revoked, linked to that organisation, and never to rebind a DID already
+bound to another login. In an existing realm the scope gains an audience mapper on the next
+`celine-policies keycloak sync`, and existing collector clients gain the optional scope on
+the next `ir-cli keycloak org-sync` or promotion. Move the realm **before** onboarding asks
+for the scope: Keycloak answers `invalid_scope` for a scope the client does not hold.
+
 !!! warning "`svc-ds-onboarding` is being retired"
-    Its credential issuance, offer-audience read, disclosure and provenance grants now belong
-    to each organisation's collector client. On those routes this plain client is accepted
-    **only under `DS_ENV=dev`**, with a warning in the log, and refused elsewhere. Its
-    membership grant is already refused. Remove those grants from the realm once the
-    onboarding service calls as the collector client.
+    Its credential issuance, offer-audience read, disclosure, provenance and Keycloak-sync
+    grants now belong to each organisation's collector client. On those routes this plain
+    client is accepted **only under `DS_ENV=dev`**, with a warning in the log, and refused
+    elsewhere. Its membership grant is already refused. Remove those grants from the realm
+    once the onboarding service calls as the collector client.
 
 ## 6. Optional sync from the charts
 

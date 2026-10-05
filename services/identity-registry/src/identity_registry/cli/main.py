@@ -34,7 +34,11 @@ from ..services.crypto import (
     generate_credential_id,
     generate_key_pair,
 )
-from ..services.issuance import active_data_subject_credential
+from ..services.issuance import (
+    HELD_FOR_ANOTHER_ORGANISATION,
+    active_data_subject_credential,
+    held_for_another_organisation,
+)
 from ..services.status_list import (
     SUSPENSION_LIST_ID,
     allocate_suspendable_index,
@@ -601,6 +605,11 @@ def credential_issue_data_subject(
             # endpoint now calls too. They had one behaviour and two
             # implementations, and only this one had it (ds#30).
             cred = await active_data_subject_credential(session, subject_did, role)
+            if cred is not None and held_for_another_organisation(
+                cred, linked_participant_did
+            ):
+                typer.echo(HELD_FOR_ANOTHER_ORGANISATION, err=True)
+                raise typer.Exit(1)
             if cred is not None:
                 typer.echo(
                     f"Active DataSubjectCredential with role={role or '-'} "
@@ -1543,10 +1552,21 @@ def owner_import(
     _run(_import())
 
 
+async def _membership_organisation(session, organization: str) -> str:
+    """The owner id ``--organization`` names, resolved as the admin API does.
+
+    Rows are stored under the owner id, so an alias has to resolve to it; a name
+    that resolves to no owner is kept verbatim (``canonical_organisation``).
+    """
+    from ..dependencies import canonical_organisation
+
+    return await canonical_organisation(session, organization)
+
+
 @membership_app.command("add")
 def membership_add(
     user_did: str = typer.Option(..., help="Member's DID"),
-    organization: str = typer.Option(..., help="Owner alias"),
+    organization: str = typer.Option(..., help="Owner id or any of its aliases"),
 ):
     """Register a user as member of an organization (idempotent).
 
@@ -1560,32 +1580,33 @@ def membership_add(
         from sqlalchemy import and_, select
 
         async with factory() as session:
+            org = await _membership_organisation(session, organization)
             result = await session.execute(
                 select(OrganizationMembership).where(
                     and_(
                         OrganizationMembership.user_did == user_did,
-                        OrganizationMembership.organization_alias == organization,
+                        OrganizationMembership.organization_alias == org,
                     )
                 )
             )
             if result.scalar_one_or_none():
-                typer.echo(f"Membership already exists: {user_did} → {organization}")
+                typer.echo(f"Membership already exists: {user_did} → {org}")
                 return
 
             membership = OrganizationMembership(
                 user_did=user_did,
-                organization_alias=organization,
+                organization_alias=org,
             )
             session.add(membership)
             await session.commit()
-            typer.echo(f"Membership registered: {user_did} → {organization}")
+            typer.echo(f"Membership registered: {user_did} → {org}")
 
     _run(_add())
 
 
 @membership_app.command("list")
 def membership_list(
-    organization: str = typer.Option(..., help="Owner alias"),
+    organization: str = typer.Option(..., help="Owner id or any of its aliases"),
 ):
     """List members of an organization."""
 
@@ -1594,14 +1615,15 @@ def membership_list(
         from sqlalchemy import select
 
         async with factory() as session:
+            org = await _membership_organisation(session, organization)
             result = await session.execute(
                 select(OrganizationMembership).where(
-                    OrganizationMembership.organization_alias == organization
+                    OrganizationMembership.organization_alias == org
                 )
             )
             memberships = result.scalars().all()
             if not memberships:
-                typer.echo(f"No members in {organization}.")
+                typer.echo(f"No members in {org}.")
                 return
             for m in memberships:
                 # **No `role`.** Migration 0017 dropped the column — it was
@@ -1617,7 +1639,7 @@ def membership_list(
 @membership_app.command("remove")
 def membership_remove(
     user_did: str = typer.Option(..., help="Member's DID"),
-    organization: str = typer.Option(..., help="Owner alias"),
+    organization: str = typer.Option(..., help="Owner id or any of its aliases"),
 ):
     """Remove a membership."""
 
@@ -1626,11 +1648,12 @@ def membership_remove(
         from sqlalchemy import and_, select
 
         async with factory() as session:
+            org = await _membership_organisation(session, organization)
             result = await session.execute(
                 select(OrganizationMembership).where(
                     and_(
                         OrganizationMembership.user_did == user_did,
-                        OrganizationMembership.organization_alias == organization,
+                        OrganizationMembership.organization_alias == org,
                     )
                 )
             )
@@ -1641,7 +1664,7 @@ def membership_remove(
 
             await session.delete(membership)
             await session.commit()
-            typer.echo(f"Membership removed: {user_did} → {organization}")
+            typer.echo(f"Membership removed: {user_did} → {org}")
 
     _run(_remove())
 

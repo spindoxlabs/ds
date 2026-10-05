@@ -301,8 +301,31 @@ def test_the_collector_client_holds_no_default_and_no_edc_scope():
         "connector.consent.audience",
         "connector.disclosure.record",
         "provenance.write",
+        "identity-registry.keycloak.sync",
     }
     assert collector_client_id("example-rec") == "svc-ds-collector-example-rec"
+
+
+def test_the_login_binding_is_a_collector_act_bound_to_the_registry():
+    """ADR-0026, amended 2026-10-05: `keycloak.sync` binds a login to a DID of
+    the organisation's own members, so it moved off the shared onboarding
+    client onto the collector client, with the registry as its one audience;
+    the plain client keeps it only as the dev transition."""
+    from ds_auth import (
+        COLLECTOR_CLIENT_OPTIONAL_SCOPES,
+        IDENTITY_REGISTRY_AUDIENCE,
+        KEYCLOAK_SYNC_SCOPE,
+        ONBOARDING_TRANSITION_SCOPES,
+        ORGANISATION_CLIENT_SCOPES,
+        SCOPE_AUDIENCES,
+    )
+
+    assert KEYCLOAK_SYNC_SCOPE == "identity-registry.keycloak.sync"
+    assert KEYCLOAK_SYNC_SCOPE in COLLECTOR_CLIENT_OPTIONAL_SCOPES
+    assert SCOPE_AUDIENCES[KEYCLOAK_SYNC_SCOPE] == IDENTITY_REGISTRY_AUDIENCE
+    assert KEYCLOAK_SYNC_SCOPE in ONBOARDING_TRANSITION_SCOPES
+    # The connector's own client binds nobody's login.
+    assert KEYCLOAK_SYNC_SCOPE not in ORGANISATION_CLIENT_SCOPES
 
 
 def test_every_audience_bound_scope_is_declared_with_its_audience():

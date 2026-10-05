@@ -249,6 +249,37 @@ def credential_role(credential_json: dict | None) -> str | None:
     return role if isinstance(role, str) else None
 
 
+def held_for_another_organisation(
+    cred: Credential, linked_participant_did: str | None
+) -> bool:
+    """Whether *cred* is linked to an organisation other than the one named.
+
+    A person keeps one DID across organisations, and `active_data_subject_credential`
+    matches on (subject, role) only, so a second organisation asking for the
+    same role finds the **first one's** credential. Re-delivering it would hand
+    that organisation's custodian the whole signed credential, with the first
+    organisation's `linkedParticipant`, `verifiedBy` and status indices; a
+    transition would suspend it and re-link the successor. Neither is that
+    caller's to do. A credential naming no organisation, or a call naming
+    none, is not a mismatch: there is no other party to protect.
+    """
+    if not linked_participant_did:
+        return False
+    subject = (cred.credential_json or {}).get("credentialSubject") or {}
+    linked = subject.get("linkedParticipant")
+    return isinstance(linked, str) and bool(linked) and linked != linked_participant_did
+
+
+#: The refusal's detail, shared by the API, the transition and the CLI. It
+#: names neither the other organisation nor the credential: those are what it
+#: withholds.
+HELD_FOR_ANOTHER_ORGANISATION = (
+    "This person already holds an active DataSubjectCredential for this role, "
+    "linked to another organisation. A person holds one credential per role "
+    "(ds#30), and that one is not this organisation's to re-deliver or reissue."
+)
+
+
 async def active_data_subject_credential(
     db: AsyncSession, subject_did: str, role: str | None
 ) -> Credential | None:

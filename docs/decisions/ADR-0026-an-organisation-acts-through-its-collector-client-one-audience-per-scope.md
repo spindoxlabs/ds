@@ -1,7 +1,7 @@
 # ADR-0026 — An organisation acts through its collector client, one audience per scope
 
 **Date:** 2026-10-05
-**Status:** accepted, implemented 2026-10-05
+**Status:** accepted, implemented 2026-10-05; amended the same day (below)
 **Rules affected:** `D-20` (a consent writer is an organisation, never a plain service),
 `D-21` (membership is checked against the organisation that speaks)
 
@@ -155,7 +155,7 @@ Checked from source at `v0.18.0` (DCP `v1.0`), following the playbook
   change to the route body.
 - `identity-registry.keycloak.sync` (binding a login to a DID, which ADR-0024 relies on)
   stays on the shared `svc-ds-onboarding` client and is cross-organisation. It is an
-  open question for the requester.
+  open question for the requester. *Answered: see the amendment below.*
 - A suspended organisation's clients stay **enabled** in Keycloak. The receivers refuse
   their acts, but a token can still be minted.
 
@@ -172,3 +172,60 @@ Checked from source at `v0.18.0` (DCP `v1.0`), following the playbook
 - A host realm (posture B) declares the collector client in its own client file:
   `hardcoded_claims.sub`, no `default_scopes`, the optional scopes above. It also needs
   celine-policies with scope-level audiences, which R12 already requires.
+
+## Amendment, 2026-10-05: the login binding, suspended clean-up, a 404 on a delete
+
+The requester answered the open question in the residual above, and two more.
+
+1. **`identity-registry.keycloak.sync` moves to the collector client**, bounded to the
+   organisation's own members. `POST /admin/keycloak/sync` writes the
+   (realm, Keycloak user id) → DID mapping that ADR-0024's person binding reads, so whoever
+   held the shared grant could bind any login to any DID. Now:
+   - the scope is declared with the audience `svc-ds-identity-registry`
+     (`ds_auth.KEYCLOAK_SYNC_SCOPE`, `SCOPE_AUDIENCES`), is one of
+     `COLLECTOR_CLIENT_OPTIONAL_SCOPES`, and the route is audience-bound like the other
+     writes;
+   - an organisation token may write a mapping only for a DID that holds a data-subject
+     credential, **not revoked**, whose `credentialSubject.linkedParticipant` is the
+     token's DID, while the organisation is verified
+     (`identity_registry.dependencies.authorize_keycloak_sync`). The credential is the
+     registry's own record that this organisation onboarded this person: it is signed by the
+     anchor and issued to an organisation only for its own DID (decision 5). The DID's
+     namespace was not chosen, because one human keeps one DID across organisations, so a
+     second organisation's member can live in the first one's namespace. A **membership** was
+     not chosen either: an organisation writes its own memberships, and that write bounds the
+     organisation, not the DID, so the rule would let an organisation make anybody its member
+     and then bind its own login to them;
+   - an organisation does **not rebind** a DID already bound to another login. The same
+     (realm, user id) re-syncs, which is how an email or username correction arrives.
+     Anything else is the operator's act, as the existing `409` for the reverse case says;
+   - an unknown DID gets the same `403` as another organisation's, before any lookup;
+   - the plain `svc-ds-onboarding` is accepted only under `DS_ENV=dev`, with a warning
+     (`ONBOARDING_TRANSITION_SCOPES`), and gets a `403` elsewhere. `identity-registry.admin`
+     keeps the cross-organisation reach.
+
+   The onboarding service asks for the scope alone as the community's collector client, at
+   approval (before anything is issued) and on an email correction's re-sync.
+2. **Cleaning up a suspended organisation is an operator duty.** Its own tokens cannot delete
+   its memberships, as decision 6 says. The rows stay for reinstatement, uncounted. When the
+   organisation is not coming back, the operator removes them with
+   `DELETE /admin/memberships/{did}/{alias}` under `identity-registry.admin` (a service token or
+   a `platform-admin` login), or with `ir-cli membership remove`, which resolves an alias to the owner
+   id as the admin API does. Both are tested against a suspended organisation.
+3. **A `404` on a membership delete or a credential revocation** is still the state a delete
+   wants, so onboarding treats it as success. It now logs it as a **misalignment**: onboarding
+   recorded something the registry does not hold, which is what an operator's clean-up looks
+   like from that side.
+
+Residual of this amendment: a person holds one credential per role (ds#30), so a second
+organisation's issuance for the **same role** is refused with `409`, as is its transition of
+that credential. Until 2026-10-05 it re-delivered the first organisation's credential, whole,
+to the second organisation's custodian and answered with its id, and a transition suspended
+it and re-linked the successor. So when two organisations onboard one person in the same
+role, the second holds no record of that person and its Keycloak sync is refused. The mapping
+the first one wrote already binds the same login, so nothing is lost, but the second
+onboarding's approval now fails at issuance. The open question on several onboarding
+instances serving one dataspace covers it.
+
+No EDC mechanism applies: binding a Keycloak login to a natural person's DID is outside DCP,
+which excludes human holders (see "Why not EDC" above).

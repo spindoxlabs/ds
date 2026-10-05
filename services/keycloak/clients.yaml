@@ -88,8 +88,13 @@ scopes:
   # Records the Keycloak user ↔ DID mapping. It used to also push a
   # `dataspace_did` attribute onto the Keycloak user; nothing read it, and it was
   # the only write this endpoint made into a realm ds may not own.
+  #
+  # A collector act since 2026-10-05 (ADR-0026, amended): the mapping is what a
+  # person route's login binding reads (ADR-0024), so an organisation binds
+  # logins only to DIDs in its own namespace, and the registry checks its `aud`.
   - name: identity-registry.keycloak.sync
     description: Bind a Keycloak user to a dataspace DID
+    audience: svc-ds-identity-registry
   # "Organisation X may register consent for its members at holder Y" — the
   # relation a holder's connector reads through `GET /consent-collectors/check`
   # (on `.read`). Managing it is a governance act about two organisations, so it
@@ -241,7 +246,9 @@ clients:
   # Presented by this plain client they are accepted only under `DS_ENV=dev`,
   # logged, as a transition (`memberships.write` not at all). They are removed
   # from this entry **last**, once the onboarding service calls as the collector
-  # client. `organizations.read`, `resolve` and `keycloak.sync` stay for now.
+  # client. `organizations.read` and `resolve` stay for now. `keycloak.sync`
+  # moved too (2026-10-05): it is accepted from this client only under
+  # `DS_ENV=dev`, logged, and removed with the other moved grants.
   - client_id: svc-ds-onboarding
     name: Dataspace Onboarding
     secret: ${SVC_DS_ONBOARDING_SECRET:-svc-ds-onboarding}
@@ -274,7 +281,9 @@ clients:
       # mapping row in the registry's own database and nothing else — the
       # `dataspace_did` attribute push this comment used to name was removed
       # (see the scope's own description above), and it was the only write the
-      # endpoint made into a realm ds may not own.
+      # endpoint made into a realm ds may not own. **Moved to the collector
+      # client** (ADR-0026, amended 2026-10-05): from this plain client the
+      # registry accepts it only under `DS_ENV=dev`.
       - identity-registry.keycloak.sync
       # **No `connector.consent.provision`** (removed 2026-09-17, plan
       # `a-collector-registers-consent-at-the-holder`). The connector refuses a

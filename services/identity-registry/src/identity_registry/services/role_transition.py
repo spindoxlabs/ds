@@ -34,7 +34,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import Settings
 from ..db.models import Credential
 from .crypto import decrypt_private_jwk, generate_credential_id, require_private_jwk
-from .issuance import active_data_subject_credential
+from .issuance import (
+    HELD_FOR_ANOTHER_ORGANISATION,
+    active_data_subject_credential,
+    held_for_another_organisation,
+)
 from .org_onboarding import suspension_index
 from .status_list import (
     SUSPENSION_LIST_ID,
@@ -108,6 +112,11 @@ async def transition_community_role(
             "first: a transition changes a claim, it does not create the holder.",
             status_code=404,
         )
+    # Another organisation's credential is not this caller's to suspend, and
+    # its successor would be re-linked to the caller while still carrying the
+    # other organisation's `verifiedBy`.
+    if held_for_another_organisation(predecessor, linked_participant_did):
+        raise RoleTransitionError(HELD_FOR_ANOTHER_ORGANISATION, status_code=409)
 
     from_role = community_role(predecessor.credential_json)
     if from_role == to_role:

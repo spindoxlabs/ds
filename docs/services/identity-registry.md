@@ -355,17 +355,29 @@ as the community's **collector client**, `svc-ds-collector-<alias>`, with a toke
 `identity-registry.memberships.write` alone
 ([ADR-0026](../decisions/ADR-0026-an-organisation-acts-through-its-collector-client-one-audience-per-scope.md)).
 
-**Audience-bound** (ADR-0026). The membership and credential writes require
-`svc-ds-identity-registry` in a service token's `aud`, checked on the route. A collector
+**Audience-bound** (ADR-0026). The membership and credential writes, and the Keycloak sync,
+require `svc-ds-identity-registry` in a service token's `aud`, checked on the route. A collector
 token that also names another ds service is refused, because it was asked for more than one
 act. Requesting the scope adds the audience (`audience:` in `clients.yaml`).
 
 **A suspended organisation does not act** (ADR-0026). Its own clients may not write its
-memberships or issue or revoke its members' credentials. `GET /memberships/check` answers
-`member: false` for its rows, which stay for reinstatement. `/consent-collectors/check` does
-not accept it, not even as collecting for itself. A name that resolves to no owner keeps the
-literal behaviour. An administrator is unbounded and can still remove a suspended
-organisation's rows.
+memberships, issue or revoke its members' credentials, or bind their logins. `GET
+/memberships/check` answers `member: false` for its rows, which stay for reinstatement.
+`/consent-collectors/check` does not accept it, not even as collecting for itself. A name that
+resolves to no owner keeps the literal behaviour.
+
+**Cleaning up after a suspended organisation is an operator duty** (ADR-0026, amended
+2026-10-05). The organisation cannot remove its own memberships, so rows that will not be
+reinstated stay until the operator removes them. Two paths, both unbounded by the suspension:
+
+- `DELETE /admin/memberships/{did}/{alias}` with `identity-registry.admin`, as a service
+  token or as a `platform-admin` login. It takes the owner id or any of its aliases;
+- `ir-cli membership remove --user-did <did> --organization <owner id or alias>`. It writes
+  the database directly, and resolves the name to the owner id as the admin API does.
+  `ir-cli membership list --organization <owner id or alias>` shows what is left.
+
+The onboarding service that served the organisation then finds the rows gone; it treats a
+`404` on its own delete as removed and logs it as a misalignment.
 
 **Credential writes are bounded to the caller's organisation** (ADR-0026).
 `identity-registry.credentials.write` moved from the plain `svc-ds-onboarding` client to each
@@ -375,6 +387,33 @@ credential only when `linked_participant_did` (the custodian) is its own DID. It
 is its own DID. That route's request names no organisation, so the credential supplies it, and
 an unknown id gets the same `403`. A plain service token on these routes is accepted
 **only under `DS_ENV=dev`**, with a warning in the log, as a transition.
+
+**The Keycloak sync is bounded to the caller's own members** (ADR-0026, amended 2026-10-05).
+`POST /admin/keycloak/sync` writes the (realm, Keycloak user id) → DID mapping that a person
+route's login binding reads ([ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)),
+so whoever writes it decides which login acts as which person. `identity-registry.keycloak.sync`
+moved from the plain `svc-ds-onboarding` client to each organisation's collector client, and
+an organisation token (`dependencies.authorize_keycloak_sync`) may write a mapping only when:
+
+- the organisation is `verified`;
+- the DID holds a data-subject credential, **not revoked**, whose
+  `credentialSubject.linkedParticipant` is the token's DID. The registry issues such a
+  credential to an organisation only for its own DID, so the credential is the record that this
+  organisation onboarded this person. It also covers a person who belongs to two organisations
+  under one DID, which the DID's namespace alone would refuse. A membership row is **not**
+  enough, because an organisation writes its own memberships and that write bounds the
+  organisation, not the DID;
+- the DID is not already bound to **another** login. Re-syncing the same (realm, user id),
+  to correct the email or username, is allowed. Rebinding is the operator's act
+  (`DELETE /admin/keycloak/mappings/{did}`, then a sync as administrator).
+
+An unknown DID gets the same `403` as another organisation's, before any lookup. The plain
+`svc-ds-onboarding` is accepted only under `DS_ENV=dev`, with a warning; `identity-registry.admin`
+keeps the cross-organisation reach. One limit comes from the registry's data as it is: a person holds
+one credential per role (ds#30), so a second organisation's issuance for the **same role** is
+refused (`409`, naming neither the other organisation nor the credential), and so is its role
+transition of that credential. The second organisation holds no record of that person and is
+refused the sync.
 
 **The collector client and its flag.** `organizations.yaml` (`collects_consent: true`, for
 `org-sync`) and `owners.yaml` (`collects_consent`, stored as `Owner.collects_consent`,

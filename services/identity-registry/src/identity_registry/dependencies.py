@@ -148,8 +148,15 @@ require_memberships_write = require_permission(
     "identity-registry.memberships.write",
     perimeter=audience_bound(),
 )
+# `keycloak.sync` writes the (realm, Keycloak user id) → DID mapping a person
+# route's login binding reads (ADR-0024), so it is an organisation's act like the
+# other two (ADR-0026, amended 2026-10-05): audience-bound, accepted from the
+# plain `svc-ds-onboarding` only under `DS_ENV=dev`, and bound to the caller's
+# own members by `authorize_keycloak_sync` below.
 require_keycloak_sync = require_permission(
-    "identity-registry.admin", "identity-registry.keycloak.sync"
+    "identity-registry.admin",
+    "identity-registry.keycloak.sync",
+    perimeter=transition_bound("binding a login to a DID (keycloak sync)"),
 )
 
 # "This organisation may register consent for its members at that holder" —
@@ -416,3 +423,103 @@ async def require_credentials_write(
     """`credentials.write` (audience-bound), bound to the caller's organisation."""
     await authorize_credential_write(db, principal, request)
     return principal
+
+
+# ── Whose logins an organisation may bind (ADR-0026, amended 2026-10-05) ─────
+#
+# `POST /admin/keycloak/sync` writes the (realm, Keycloak user id) → DID mapping
+# that ADR-0024's person binding relies on: whoever writes it decides which
+# login acts as which person. An organisation's token may bind a login only to a
+# DID **its own members** hold, and the registry data that says so is the
+# credential:
+#
+# * the DID holds a data-subject credential, not revoked, whose
+#   `credentialSubject.linkedParticipant` is the token's DID. The registry signs
+#   it, and issues it to an organisation only for its own DID
+#   (`authorize_credential_write`), so it is the record of *this organisation
+#   onboarded this person*. It also covers the person who belongs to two
+#   organisations: one human keeps one DID (`issue_data_subject_credential`),
+#   so the second organisation's member lives in the first one's namespace,
+#   and the DID's namespace alone would refuse the second organisation;
+# * **not** a membership row. An organisation writes its own memberships, and
+#   that write bounds the organisation, not the DID, so a membership rule would
+#   let an organisation make anybody its member and then bind its own login to
+#   them;
+# * a DID that is **already bound** to another login is not rebound by an
+#   organisation: the same Keycloak user re-syncs (an email or username
+#   correction), anything else is the operator's explicit act, as the `409` for
+#   the reverse case already says.
+#
+# The organisation must be verified. A DID that is not found and one that is not
+# the organisation's get the same 403, so the route is no oracle for DIDs. An
+# administrator is unbounded; a plain service token went through the dev-only
+# transition in the permission's perimeter.
+
+
+async def authorize_keycloak_sync(
+    db: AsyncSession,
+    principal: Principal,
+    did: str,
+    *,
+    keycloak_realm: str,
+    keycloak_user_id: str,
+) -> None:
+    """Refuse (403) an organisation binding a login outside its own members."""
+    if principal.grants(ADMIN_PERMISSION) or not principal.is_organisation:
+        return
+    owner = await token_owner(db, principal)
+    context = principal.organisation_context
+    if owner is None:
+        raise HTTPException(
+            status_code=403,
+            detail=f"'{context}' is not the DID of exactly one registered organisation",
+        )
+    if owner.status != VERIFIED:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Organisation '{owner.id}' is {owner.status}, not verified: it may "
+                "not bind logins to DIDs"
+            ),
+        )
+
+    from sqlalchemy import select
+
+    from .db.models import Credential, KeycloakMapping
+
+    creds = await db.execute(
+        select(Credential).where(
+            Credential.subject_did == did, Credential.status != "revoked"
+        )
+    )
+    linked = any(
+        ((c.credential_json or {}).get("credentialSubject") or {}).get(
+            "linkedParticipant"
+        )
+        == context
+        for c in creds.scalars()
+    )
+    if not linked:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "An organisation may bind a login only to a DID of its own members: "
+                "the DID must hold a credential, not revoked, linked to "
+                f"'{owner.id}'"
+            ),
+        )
+
+    mapped = await db.execute(select(KeycloakMapping).where(KeycloakMapping.did == did))
+    mapping = mapped.scalar_one_or_none()
+    if mapping is not None and (
+        mapping.keycloak_realm != keycloak_realm
+        or mapping.keycloak_user_id != keycloak_user_id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This DID is already bound to another login. Rebinding is an "
+                "operator's explicit act (DELETE /admin/keycloak/mappings/{did}, "
+                "then sync), never an organisation's"
+            ),
+        )
