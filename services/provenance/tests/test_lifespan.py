@@ -12,6 +12,8 @@ what is being asserted is the startup contract, not a request.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from ds_auth.production import InsecureProductionConfig
@@ -116,6 +118,31 @@ async def test_production_starts_once_all_of_them_are_supplied(monkeypatch):
     )
 
     await _run_lifespan(monkeypatch)
+
+
+@pytest.mark.rule("L-18")
+@pytest.mark.asyncio
+async def test_startup_names_the_retention_period_in_force(monkeypatch):
+    """Unset is the ten-year default, said once at startup and not a warning.
+
+    The handler sits on the module's logger: `create_app` configures the root
+    logger, which replaces pytest's capture handler."""
+    monkeypatch.setenv("DS_ENV", "dev")
+    monkeypatch.delenv("PROVENANCE_PERSON_ID_RETENTION_DAYS", raising=False)
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler(logging.INFO)
+    handler.emit = records.append  # type: ignore[method-assign]
+    logger = logging.getLogger("provenance.main")
+    monkeypatch.setattr(logger, "level", logging.INFO)
+    logger.addHandler(handler)
+    try:
+        await _run_lifespan(monkeypatch)
+    finally:
+        logger.removeHandler(handler)
+    said = [r for r in records if "PERSON_ID_RETENTION_DAYS" in r.getMessage()]
+    assert len(said) == 1
+    assert said[0].levelname == "INFO"
+    assert "3650 days" in said[0].getMessage()
 
 
 @pytest.mark.asyncio

@@ -119,11 +119,11 @@ async def lifespan(app: FastAPI):
         "Set PROVENANCE_SUBJECT_PSEUDONYM_KEY to a generated secret, once: "
         "changing it later breaks the verification of every existing record.",
     )
-    if settings.person_id_retention_days is None and is_production():
-        log.warning(
-            "PROVENANCE_PERSON_ID_RETENTION_DAYS is unset: person ids in the "
-            "provenance record are kept in clear for the life of the record (L-18)."
-        )
+    log.info(
+        "Person ids in the provenance record are pseudonymised after %d days "
+        "(PROVENANCE_PERSON_ID_RETENTION_DAYS, L-18).",
+        settings.person_id_retention_days,
+    )
     guard.enforce()
 
     app.state.login_binding = (

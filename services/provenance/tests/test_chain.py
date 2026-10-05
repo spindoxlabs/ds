@@ -8,6 +8,8 @@ still verifies, because it hashed the pseudonym from the start.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -317,9 +319,86 @@ async def test_the_subject_still_reads_their_pseudonymised_history(
 
 
 @pytest.mark.rule("L-18")
-def test_retention_without_a_period_does_nothing(capsys, monkeypatch):
-    from provenance.config import get_settings
+def test_the_retention_period_defaults_to_ten_years(monkeypatch):
+    """Unset is not "keep in clear forever": ten years, the ordinary limitation
+    period, applies to every deployment that does not choose its own."""
+    from provenance.config import Settings
 
-    monkeypatch.setattr(get_settings(), "person_id_retention_days", None)
+    monkeypatch.delenv("PROVENANCE_PERSON_ID_RETENTION_DAYS", raising=False)
+    assert Settings(_env_file=None).person_id_retention_days == 3650
+
+
+@pytest.mark.rule("L-18")
+def test_the_deployment_sets_its_own_retention_period(monkeypatch):
+    from provenance.config import Settings
+
+    monkeypatch.setenv("PROVENANCE_PERSON_ID_RETENTION_DAYS", "730")
+    assert Settings(_env_file=None).person_id_retention_days == 730
+
+
+@pytest.mark.rule("L-18")
+@pytest.mark.parametrize("value", ["0", "-1", ""])
+def test_retention_cannot_be_switched_off(monkeypatch, value):
+    from pydantic import ValidationError
+
+    from provenance.config import Settings
+
+    monkeypatch.setenv("PROVENANCE_PERSON_ID_RETENTION_DAYS", value)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+@pytest.mark.rule("L-18")
+def test_the_retention_job_runs_with_the_default_period(capsys, monkeypatch, tmp_path):
+    """`provenance-admin retention` with nothing configured pseudonymises what
+    is older than ten years and leaves what is younger."""
+    from pydantic import TypeAdapter
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from provenance import cli
+    from provenance import config as config_module
+    from provenance.db.engine import Base
+    from provenance.schemas.events import DomainEvent
+    from provenance.services.event_service import ingest_event
+
+    monkeypatch.delenv("PROVENANCE_PERSON_ID_RETENTION_DAYS", raising=False)
+    monkeypatch.setattr(config_module, "_settings", None)
+    url = f"sqlite+aiosqlite:///{tmp_path / 'record.db'}"
+    now = datetime.now(timezone.utc)
+    events = TypeAdapter(list[DomainEvent]).validate_python(
+        [
+            consent("c-11y", when=now - timedelta(days=11 * 365)),
+            consent("c-9y", OTHER, when=now - timedelta(days=9 * 365)),
+        ]
+    )
+
+    async def seed() -> None:
+        engine = create_async_engine(url)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with async_sessionmaker(engine)() as s, s.begin():
+            for event in events:
+                await ingest_event(s, event)
+        await engine.dispose()
+
+    asyncio.run(seed())
+    monkeypatch.setattr(
+        cli,
+        "get_session_factory",
+        lambda: async_sessionmaker(create_async_engine(url), expire_on_commit=False),
+    )
+
     assert admin_main(["retention"]) == 0
-    assert "no retention period" in capsys.readouterr().out
+    result = json.loads(capsys.readouterr().out)
+    assert result["events"] == 1
+    cutoff = datetime.fromisoformat(result["cutoff"])
+    assert timedelta(days=3649) < now - cutoff < timedelta(days=3651)
+
+
+@pytest.mark.rule("L-18")
+@pytest.mark.parametrize("value", ["0", "-30", "ten"])
+def test_the_retention_job_refuses_a_period_below_one_day(capsys, value):
+    with pytest.raises(SystemExit) as exit_:
+        admin_main(["retention", "--days", value])
+    assert exit_.value.code != 0
+    assert "--days" in capsys.readouterr().err

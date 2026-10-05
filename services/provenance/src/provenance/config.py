@@ -96,9 +96,11 @@ class Settings(BaseSettings):
     # default is refused outside dev (`ProductionGuard`).
     subject_pseudonym_key: str = DEV_SUBJECT_PSEUDONYM_KEY
     # After this many days a record's person ids are replaced by their
-    # pseudonyms (`provenance-admin retention`). Unset keeps them in clear for the
-    # life of the record, and the service says so at startup outside dev.
-    person_id_retention_days: int | None = Field(default=None, ge=1)
+    # pseudonyms (`provenance-admin retention`). Default ten years — the Italian
+    # ordinary limitation period (art. 2946 c.c.) — to be confirmed by the
+    # deployment's data-protection contact. There is no "never": a deployment
+    # may lengthen the period, not switch it off.
+    person_id_retention_days: int = Field(default=3650, ge=1)
 
 
 _settings: Settings | None = None

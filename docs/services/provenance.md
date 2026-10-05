@@ -71,8 +71,8 @@ hash-chained onto the one before it, and `GET /prov/chain/verify` recomputes the
 route changes or deletes anything: nodes are created and read, and a `POST` naming an IRI that
 already exists answers `409` with the node as recorded.
 
-**Lets person ids age out** (`L-18`). After `PROVENANCE_PERSON_ID_RETENTION_DAYS`, the
-retention job replaces the person ids in a record with their keyed pseudonyms. The record
+**Lets person ids age out** (`L-18`). After `PROVENANCE_PERSON_ID_RETENTION_DAYS` (default
+ten years), the retention job replaces the person ids in a record with their keyed pseudonyms. The record
 stays, the chain still verifies, and the subject still reads it.
 
 ## How it works
@@ -146,7 +146,11 @@ row comes from a chained `QueryExecuted` event.
 ### Retention of person ids
 
 `provenance-admin retention` (for a scheduled job) takes every record older than
-`PROVENANCE_PERSON_ID_RETENTION_DAYS`, by `occurred_at`. It replaces the person ids in the
+`PROVENANCE_PERSON_ID_RETENTION_DAYS`, by `occurred_at`, or `--days N` for one run. The
+period defaults to 3650 days, ten years: the ordinary limitation period for claims under
+Italian law (art. 2946 c.c.). It is configurable per deployment, to be confirmed by the
+deployment's data-protection contact, and cannot be switched off: a value below 1 refuses to
+start. The service logs the period in force at startup. It replaces the person ids in the
 payload, the `subject_id` column, the activity node's `external_meta` and the matching
 `access_log` rows with their pseudonyms, and sets `pseudonymised_at`. An agent node named by
 a person id is renamed to the pseudonym once no newer record names that id in clear. If the
@@ -210,7 +214,7 @@ Every edge points backwards in time, so `direction` selects which way the walk f
 | `PROVENANCE_IDENTITY_REGISTRY_URL` | — | the registry holding the Keycloak mappings (the anchor's). Required while the login binding is. It is asked with the person's token, so no client secret is needed |
 | `PROVENANCE_PERSON_TOKEN_REQUIRED` | unset = required unless `DS_ENV=dev` | as the connector's |
 | `PROVENANCE_SUBJECT_PSEUDONYM_KEY` | a dev constant | **secret**. The key person ids are pseudonymised under, in the chain and at retention. Set once per store and **never rotated**: a new key fails the verification of every existing record. The dev value is refused in production |
-| `PROVENANCE_PERSON_ID_RETENTION_DAYS` | unset | days after which a record's person ids are pseudonymised. Unset keeps them in clear, and the service warns at startup outside dev |
+| `PROVENANCE_PERSON_ID_RETENTION_DAYS` | `3650` | days after which a record's person ids are pseudonymised by `provenance-admin retention`. Ten years, the Italian ordinary limitation period (art. 2946 c.c.), to be confirmed per deployment; at least 1, there is no "never" |
 
 Under `DS_ENV=production` the service refuses to start if the Keycloak issuer, the trust-anchor
 DID or the trust list is unset, if the pseudonym key is the dev value, or if either

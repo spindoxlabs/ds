@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-10-05 from `de88c7a-dirty`.
+Generated 2026-10-05 from `82abe54-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 133 |
 | …of those, **evidenced by a test that names them** | 133 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1134 |
+| Test nodes declaring a rule | 1139 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -229,7 +229,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `L-15` | Enforced | ✅ evidenced | e2e×1, unit×6 | `provider-withdrawal`, `services/connector/tests/test_prov_bridge_emitters.py::test_the_scan_finds_the_emitters`, `services/connector/tests/test_prov_bridge_emitters.py::test_every_emitter_has_a_call_site` +4 more |
 | `L-16` | Declared | · consistent | — | — |
 | `L-17` | Enforced | ✅ evidenced | integration×1, unit×10 | `services/provenance/tests/integration/test_chain_backfill.py::test_existing_rows_are_chained_by_the_migration`, `services/provenance/tests/test_chain.py::test_each_event_is_chained_onto_the_last`, `services/provenance/tests/test_chain.py::test_a_changed_record_is_found` +8 more |
-| `L-18` | Enforced | ✅ evidenced | unit×7 | `services/provenance/tests/test_chain.py::test_the_chain_hashes_the_pseudonym_not_the_id`, `services/provenance/tests/test_chain.py::test_the_pseudonym_is_keyed`, `services/provenance/tests/test_chain.py::test_retention_pseudonymises_old_records_only` +4 more |
+| `L-18` | Enforced | ✅ evidenced | unit×12 | `services/provenance/tests/test_chain.py::test_the_chain_hashes_the_pseudonym_not_the_id`, `services/provenance/tests/test_chain.py::test_the_pseudonym_is_keyed`, `services/provenance/tests/test_chain.py::test_retention_pseudonymises_old_records_only` +9 more |
 
 ## Blueprint coverage
 
