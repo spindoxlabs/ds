@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from typing import Literal
 from pathlib import Path
 
 import yaml
@@ -44,7 +45,8 @@ from celine.governance.models import GovernanceOwner as GovernanceOwner
 from celine.governance.models import GovernanceRule as GovernanceRule
 from celine.governance.models import OntologyConfig as OntologyConfig
 from celine.governance.models import TemporalCoverage as TemporalCoverage
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from celine.governance import DEFAULT_ROW_FILTER_BINDS, row_filter_binds
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +66,41 @@ class RowFilterArgs(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    column: str
+    #: Required of a filter that binds a person (see `RowFilter`); a filter that
+    #: binds an organization may name none (`org_type` alone, or nothing at all).
+    column: str | None = None
 
 
 class RowFilter(BaseModel):
+    """One `row_filters` entry: a handler, its args, and what it binds rows to.
+
+    `binds` (celine-utils REQ-0010) is `person` — the rows are someone's, and the
+    filter is per-subject access control — or `organization` — the rows are an
+    organization's, and the filter only says which organization's members may read
+    them inside the platform. Absent is `person`. **Only a filter binding a person
+    is a consent signal** (`consent.py`) and only one is ever put on the wire with
+    the consenting subjects (`dataplane.py`): an organization is not a data subject.
+
+    A person filter must carry `args.column`, as before `binds` existed: absent, the
+    file fails to load. A blank one loads and `check_consent_coherence` errors on
+    it. An organization filter may name none.
+    """
+
     handler: str
-    args: RowFilterArgs
+    binds: Literal["person", "organization"] = DEFAULT_ROW_FILTER_BINDS  # type: ignore[assignment]
+    args: RowFilterArgs = Field(default_factory=RowFilterArgs)
+
+    @property
+    def binds_person(self) -> bool:
+        return self.binds == "person"
+
+    @model_validator(mode="after")
+    def _a_person_filter_names_its_column(self) -> "RowFilter":
+        if self.binds_person and self.args.column is None:
+            raise ValueError(
+                f"row filter '{self.handler}' binds a person and names no args.column"
+            )
+        return self
 
 
 # `GovernanceRule` — upstream's, imported above. The class that stood here
@@ -555,6 +586,10 @@ def subject_column(rule: "GovernanceRule | GovernanceRuleV2") -> str | None:
     was the half that already agreed with the data plane.
     """
     for row_filter in getattr(rule, "row_filters", None) or []:
+        # Only a filter binding a person carries the data subject; an
+        # organization filter's column holds organization aliases (REQ-0010).
+        if row_filter_binds(row_filter) != "person":
+            continue
         args = getattr(row_filter, "args", None)
         # A model when parsed from governance YAML, a plain dict when a rule is
         # built by hand in a test or a fixture.

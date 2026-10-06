@@ -179,13 +179,19 @@ class GovernanceResolver:
         # Every argument survives, not just `column` — the handler named in the
         # entry is the only thing that knows which of them it needs, and it runs in
         # the data plane. `RowFilterArgs` is `extra="allow"` for that reason.
+        #
+        # A filter binding an organization may omit `args` (`member_wide` takes
+        # none); a person filter without them is dropped exactly as before.
         if "row_filters" in block:
             block["row_filters"] = [
                 f
                 for f in (block["row_filters"] or [])
                 if isinstance(f, dict)
                 and f.get("handler")
-                and isinstance(f.get("args"), dict)
+                and (
+                    isinstance(f.get("args"), dict)
+                    or ("args" not in f and f.get("binds") == "organization")
+                )
             ]
 
         # ── One block, and it is the canonical one ──────────────────────────

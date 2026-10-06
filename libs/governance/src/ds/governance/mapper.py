@@ -773,9 +773,13 @@ class GovernanceMapper:
                 # other to `/internal/dataplane/authorize` (`GOV-05`). One fact,
                 # one reader; `test_subject_column.py` asserts they agree.
                 f"{pfx}:userFilterColumn": subject_column(rule),
+                # Person filters only: they describe what a consent narrows. An
+                # organization filter is the provider platform's own access
+                # control and says nothing a counterparty can rely on.
                 f"{pfx}:rowFilters": [
                     {"handler": f.handler, "column": f.args.column}
                     for f in rule.row_filters
+                    if f.binds_person
                 ]
                 or None,
                 # `GOV-14`. Parsed, merged through overlays and read by nothing

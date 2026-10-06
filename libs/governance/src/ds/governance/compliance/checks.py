@@ -448,22 +448,44 @@ def check_consent_coherence(
     contradiction. A file declaring per-subject access control while declaring the
     data impersonal is asserting two things that cannot both be true, and the
     producer is the one who knows which they meant.
+
+    Only a filter **binding a person** counts as per-subject filtering (celine-utils
+    REQ-0010). A fourth arm errors on personal data narrowed *only* by organization
+    filters: the likeliest cause is a person filter marked `binds: organization`,
+    which would otherwise read as merely incomplete.
     """
     for item in exposed:
         rule = item.rule
-        has_filter = bool(rule.user_filter_column or rule.row_filters)
+        # A filter binding an organization is not per-subject access control
+        # (celine-utils REQ-0010): only a person filter counts here.
+        person_filters = [f for f in rule.row_filters if f.binds_person]
+        organization_filters = [f for f in rule.row_filters if not f.binds_person]
+        has_filter = bool(rule.user_filter_column or person_filters)
         declares_personal = bool(
             rule.dataspace.consent_required or rule.classification == "pii"
         )
         if has_filter and not declares_personal:
             result.error(
                 "consent-coherence",
-                "row-level filtering is declared but neither "
+                "a row filter binding a person is declared but neither "
                 "dataspace.consent_required nor classification: pii is — the file "
                 "asserts per-subject access control while declaring the data "
                 "impersonal, and the filters are then the only thing gating it",
                 item.key,
             )
+        if declares_personal and not has_filter and organization_filters:
+            # Personal data narrowed only by organization: either a person filter
+            # was marked `binds: organization` by mistake, or the per-subject
+            # filter is missing. Either way consent cannot be enforced, and the
+            # file says so loudly rather than gating on a filter that binds nobody.
+            result.error(
+                "consent-coherence",
+                "consent_required or classification: pii is declared but every "
+                "row filter binds an organization — consent cannot be enforced per "
+                "subject; mark the per-subject filter `binds: person` or add one",
+                item.key,
+            )
+            continue
         if rule.dataspace.consent_required and not has_filter:
             result.warning(
                 "consent-coherence",
@@ -477,8 +499,8 @@ def check_consent_coherence(
                 "Dataset is classified 'pii' but declares no row-level filtering",
                 item.key,
             )
-        for row_filter in rule.row_filters:
-            if not row_filter.args.column.strip():
+        for row_filter in person_filters:
+            if not (row_filter.args.column or "").strip():
                 result.error(
                     "consent-coherence",
                     f"row_filter '{row_filter.handler}' has an empty column",

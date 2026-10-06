@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import httpx
+from celine.governance import row_filter_binds
 from ds.governance import (
     ALLOW,
     DENY,
@@ -647,6 +648,12 @@ def _row_filter_spec(rule) -> dict | None:
     shipped only a column would have to assume one of them.
     """
     for row_filter in getattr(rule, "row_filters", None) or []:
+        # The first filter **binding a person** (celine-utils REQ-0010): it is
+        # the one the consenting subjects narrow. An organization filter is the
+        # provider platform's own access control and refuses a delegated request
+        # at the data plane, so sending it would serve no rows.
+        if row_filter_binds(row_filter) != "person":
+            continue
         args = getattr(row_filter, "args", None)
         if isinstance(args, dict):
             args_dict = dict(args)

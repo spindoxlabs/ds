@@ -9,6 +9,12 @@ already failed once: `mapper.py` and a since-deleted `matrix.py` differed by the
 clause, so a `pii` dataset with no filter and no `consent.required` was **reported gated
 and published ungated**, the divergence pointing at the auditor rather than at the wire.
 
+**`row_filters` counts only a filter that binds a person** (celine-utils REQ-0010,
+`binds: person`, the default). A filter binding an organization narrows rows to an
+organization's members inside the platform; no person is behind such a row, so it says
+nothing about consent. Forgetting `binds: organization` on one over-gates the dataset —
+and `check_consent_coherence` then errors — never the other way round.
+
 **Four signals, ORed, and any one alone gates the dataset.** That is what the code has
 always done; what is new here is that it is written down once and says *which* signal
 answered. Measured across `celine-eu/celine-pipelines` on 2026-09-02: all 20 `rec`-owned
@@ -37,6 +43,8 @@ is not a mapper detail, and leaving it there is what made the second copy look r
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from celine.governance import row_filter_binds
 
 from .models import GovernanceRuleV2
 
@@ -113,7 +121,7 @@ def consent_gate(rule: GovernanceRuleV2) -> ConsentGate:
             (
                 rule.dataspace.consent_required,
                 rule.user_filter_column,
-                rule.row_filters,
+                any(row_filter_binds(f) == "person" for f in rule.row_filters),
                 rule.classification == "pii",
             ),
             strict=True,
