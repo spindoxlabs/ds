@@ -92,6 +92,11 @@ public class FilesystemVaultSeederExtension implements ServiceExtension {
             throw new IllegalStateException("Failed to read vault seed file " + path, e);
         }
 
+        // G5: refuse a dev or fixture secret before anything reaches the vault.
+        var guard = new ProductionGuard("ds-edc vault seed", context.getSetting(ProductionGuard.DS_ENV, ""));
+        properties.forEach((key, value) -> guard.checkVaultSeed(String.valueOf(key), String.valueOf(value)));
+        guard.enforce(monitor);
+
         properties.forEach((key, value) -> {
             var secretName = String.valueOf(key);
             var secretValue = String.valueOf(value);

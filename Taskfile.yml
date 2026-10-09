@@ -1668,7 +1668,7 @@ tasks:
       - task: secrets:keygen
 
   secrets:check:
-    desc: Fail if any CHANGE_ME or known dev default remains in a production env file
+    desc: Fail if any CHANGE_ME or known dev default remains in a production env file, or in a decrypted helm secrets file (FILE=*.yaml)
     vars:
       FILE: '{{.FILE | default ".env.production"}}'
     cmds:
@@ -1676,6 +1676,15 @@ tasks:
         set -eu
         FILE="{{.FILE}}"
         [ -f "$FILE" ] || { echo "✗ $FILE not found — run: task secrets:bootstrap"; exit 1; }
+        # A decrypted helm secrets file (what a chart deployment is made from):
+        # placeholders and dev defaults at any depth, client secrets equal to
+        # their client id (mapping from services/keycloak/clients*.yaml), shared
+        # custody keys, and each participant's EDR key halves agreeing. Never
+        # prints a value. `every-secret-has-one-source` P4.
+        case "$FILE" in
+          *.yaml|*.yml)
+            exec uv run --no-project --with pyyaml python -I helm/tools/secrets_check.py "$FILE" --repo "{{.ROOT_DIR}}" ;;
+        esac
         rc=0
         # Only inspect assignments; comment lines legitimately name the dev
         # defaults they are warning about.

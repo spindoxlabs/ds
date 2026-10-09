@@ -196,6 +196,14 @@ spec:
         - name: seed
           configMap:
             name: {{ .Values.bootstrap.seedConfigMap }}
+            {{- with .Values.bootstrap.seedItems }}
+            # Nested paths a ConfigMap key cannot spell (row 21).
+            items:
+              {{- range . }}
+              - key: {{ required "bootstrap.seedItems[].key is required" .key | quote }}
+                path: {{ required "bootstrap.seedItems[].path is required" .path | quote }}
+              {{- end }}
+            {{- end }}
         {{- end }}
         {{- if .Values.bootstrap.governanceConfigMap }}
         - name: governance

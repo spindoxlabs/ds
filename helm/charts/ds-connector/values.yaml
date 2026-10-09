@@ -33,7 +33,16 @@ tolerations: []
 affinity: {}
 env: {}
 existingSecret: ""
-networkPolicy: {egress: []}
+networkPolicy:
+  egress: []
+  # Who else may call this connector, beyond its own portal, EDC and sync Job
+  # (chart parity row 8). The host platform's consent writer and data plane run
+  # in a namespace of their own; each entry admits exactly that namespace — and,
+  # with `podLabels`, exactly those pods — on the service port. `namespace` is
+  # required: an entry without one would be an empty selector, which admits
+  # every namespace.
+  #   - {namespace: host-platform, podLabels: {app.kubernetes.io/name: dataset-api}}
+  ingressFrom: []
 
 migration:
   enabled: true
@@ -108,6 +117,29 @@ governance:
   # and nothing reports it. A provider-role participant needs this set.
   configMap: ""
   mountPath: /governance
+  # The deployment's own ODRL profile, a key of `configMap`. "" → ds's bundled
+  # profile, under which every offer naming a deployment-added purpose stops
+  # publishing. The connector refuses to start on a path that does not exist.
+  odrlProfileFile: ""
+  # A digest of the assembled governance, rendered as the pod annotation
+  # `checksum/governance`. The ConfigMap is the deployment's, so a governance
+  # change with unchanged values otherwise rolls nothing and — the helmfile
+  # seeing no diff — re-runs no sync. With it, a governance change is a rollout,
+  # and the post-upgrade hook publishes it.
+  checksum: ""
+
+# ── EDR verification key (GET /internal/edr-jwks) ─────────────────────────────
+# A data plane verifies the EDR it is handed against the public half of the key
+# this participant's EDC signs with (chart parity OQ1, option b). It arrives as
+# `secrets.edrPublicJwk` in this release's own Secret — never the ds-edc Secret,
+# so this pod holds no private material — and is mounted as a one-line vault
+# file the connector already reads. Required for a provider.
+edr:
+  # `edc.transfer.proxy.token.signer.privatekey.alias` in the ds-edc chart. The
+  # connector publishes it as the JWK's `kid`, because EDC stamps it into the
+  # token header.
+  signerAlias: participant-private-key
+  mountPath: /edr
 
 # ── Publishing (POST /provider/sync) ──────────────────────────────────────────
 # Who turns this participant's governance into EDC assets, policies and contract
@@ -192,6 +224,21 @@ secrets:
   # (newest first) and the blind-index HMAC secret. Both required.
   atRestKeys: ""
   keyIndexSecret: ""
+  # The PUBLIC half of this participant's EDR signing key: the ds-edc release's
+  # `edrSigningPrivateJwk` without `d`. A `d` here fails the render. With
+  # `existingSecret`, that Secret carries it as `edr-verification.properties`
+  # (`<edr.signerAlias>=<public JWK on one line>`).
+  edrPublicJwk: ""
+
+# ── helm test ─────────────────────────────────────────────────────────────────
+# `helm test` reads the catalogue as this participant's organisation client and
+# compares its size with what the mounted governance exposes. Rendered for a
+# provider with governance. `tlsVerify: false` only for a rehearsal cluster with
+# a private CA.
+tests:
+  enabled: true
+  tlsVerify: true
+  imageTag: ""
 
 global:
   baseDomain: ds.example.org

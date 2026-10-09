@@ -191,7 +191,11 @@ authority:
 
   identityRegistry:
     replicaCount: 1
-    trustAnchorDomain: trust-anchor.ds.example.org
+    # "" → derived as <global.hosts.trustAnchor>.<global.baseDomain>, which is
+    # also what every participant derives the anchor's DID from. A literal here
+    # must equal that, or the render fails: the anchor would otherwise sign as a
+    # DID no participant trusts.
+    trustAnchorDomain: ""
 
     # did:web resolution for user DIDs (did:web:users.<baseDomain>:<id>).
     # Only needed if REMOTE verifiers resolve your user DIDs. If all VC
@@ -207,8 +211,15 @@ authority:
       # container. Idempotent (upsert semantics), safe on every pod start.
       enabled: true
       # Empty → the image's baked-in defaults are used.
-      seedConfigMap: "" # owners.yaml / participants.yaml / memberships
+      seedConfigMap: "" # agreements.yaml / owners.yaml / bootstrap.sh / texts
       seedMountPath: /seed
+      # Optional key → path mapping for the seed ConfigMap (its volume's own
+      # `items:`). A ConfigMap key cannot contain `/`, so an agreements file
+      # whose `text:` paths are nested (`content/<doc>-<locale>.md`, resolved
+      # relative to the file) is mounted by mapping each key back to its path.
+      # Empty mounts every key flat, as before. Listing items mounts ONLY those.
+      #   - {key: participation-en.md, path: content/participation-en.md}
+      seedItems: []
       # A deployment's own governance, as a ConfigMap. Its keys become flat
       # filenames under the mount — a ConfigMap key cannot contain `/`.
       governanceConfigMap: ""
@@ -226,97 +237,17 @@ authority:
 # ==============================================================================
 # Participants — one release group per participant
 # ==============================================================================
+# **Empty in the base, on purpose.** A deployment lists its own participants in
+# its own values. Helmfile merges a list over a list **element by element**, so
+# an example list here would leak into every deployment's render: its third
+# entry kept, and the first two entries' keys merged into whatever the
+# deployment's first two are. ds's own example participants (`rec`,
+# `grid-operator`, `third-party`) are in values.example.yaml, which only the
+# `example` environment reads. That file shows every key of an entry.
+#
 # Public host per participant: <name>.<global.baseDomain>, serving exactly
-#   /.well-known/did.json   → identity-registry (rewritten)
+#   /.well-known/did.json, /.well-known/dspace-version
 #   /credentials/*, /sts/*, /users/*  → identity-registry (DCP surfaces)
 #   /protocol/2025-1/*      → EDC DSP
-# Everything else on that host returns 404. There is no /public route: the EDC
-# data-plane public context is registered by no packaged module, and a consumer
-# pulls from the dataset API rather than through any EDC.
-participants:
-  - name: rec
-    enabled: true
-    role: provider # provider | consumer | both
-
-    # did: "" → derived as did:web:<name>.<global.baseDomain>. Override to pin.
-    did: ""
-
-    # The dataset API is participant-operated and NOT deployed by these charts,
-    # and it needs no value here: it authenticates to the connector's
-    # /internal/dataplane/authorize with the EDC API key, so ds is the callee.
-    # Where a consumer is sent for the data is governance.yaml's
-    # data_address.base_url, carried by the governance ConfigMap.
-
-    connector:
-      replicaCount: 1
-      # Webhook notifications are rejected unless the host is allowlisted.
-      # **"" is none.** This was the string "null", which the connector does
-      # not recognise: `build_notifier` splits on commas and matches each part
-      # against "smtp"/"webhook", so every deployment logged
-      # `Unknown notification backend 'null' — skipped` before falling through
-      # to the no-op notifier it wanted anyway.
-      notifyBackends: "" # "" | smtp | webhook (comma-separated)
-      webhookAllowedHosts: [] # required if notifyBackends includes webhook
-      governanceOverlayName: "" # merges governance.<name>.yaml
-      # "" mounts nothing and the catalogue stays empty — there is no
-      # baked-in governance.yaml in the image. A provider needs this set.
-      governanceConfigMap: ""
-
-    provenance:
-      replicaCount: 1
-
-    edc:
-      replicaCount: 1
-
-    federatedCatalog:
-      enabled: true
-      replicaCount: 1
-      crawlInterval: 300
-
-    portal:
-      # The portal is deployed alongside exactly one participant.
-      enabled: true
-      replicaCount: 1
-
-  # A **second provider**, and one shaped differently from the first (`D-54`,
-  # `DID-15`): a grid operator shares its own infrastructure data and has no
-  # members, so nothing downstream may assume a participant holds credentials
-  # for people. Disabled by default — a deployment enables the participants it
-  # actually has — but present, because a chart that can only express one
-  # provider is a chart that encodes the dev fixture.
-  - name: grid-operator
-    enabled: false
-    role: provider
-    did: ""
-    connector:
-      replicaCount: 1
-      notifyBackends: ""
-      webhookAllowedHosts: []
-      # Its own governance. The consent offers of the participant that *has*
-      # members are not this one's to publish.
-      governanceConfigMap: ""
-    provenance:
-      replicaCount: 1
-    edc:
-      replicaCount: 1
-    federatedCatalog:
-      enabled: false
-    portal:
-      enabled: false
-
-  - name: third-party
-    enabled: true
-    role: consumer
-    did: ""
-    connector:
-      replicaCount: 1
-      notifyBackends: ""
-      webhookAllowedHosts: []
-    provenance:
-      replicaCount: 1
-    edc:
-      replicaCount: 1
-    federatedCatalog:
-      enabled: false
-    portal:
-      enabled: false
+# Everything else on that host returns 404.
+participants: []

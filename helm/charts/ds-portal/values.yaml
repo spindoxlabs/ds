@@ -74,6 +74,12 @@ auth:
 # derived. Leave empty and the catalogue detail view, /my-data's "data held about
 # you" list and the health page's dataset-api probe are unavailable — the portal
 # has no in-cluster address to fall back to.
+# Whether this participant runs a `ds-federated-catalog` release. The helmfile
+# sets it from `participants[].federatedCatalog.enabled`; false renders no
+# FEDERATED_CATALOG_URL, and the catalogue page falls back to `datasetApi.url`.
+federatedCatalog:
+  enabled: false
+
 datasetApi:
   url: "" # e.g. https://datasets.internal.example.org
 
@@ -136,3 +142,12 @@ global:
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 512Mi}
+
+# ── helm test ─────────────────────────────────────────────────────────────────
+# Through the public Ingress, with no session: `/join` answers 200 (the public
+# carve-out) and `/` does not (it is behind the login wall). The local doctor's
+# "portal /join, anonymous, via the edge" row.
+tests:
+  enabled: true
+  tlsVerify: true
+  imageTag: ""

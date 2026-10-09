@@ -122,6 +122,13 @@ bootstrap:
   enabled: true
   seedConfigMap: ""
   seedMountPath: /seed
+  # Key → path for the seed ConfigMap's volume (its own `items:`). A ConfigMap
+  # key cannot contain `/`, so an agreements file whose `text:` paths are nested
+  # (`content/<doc>-<locale>.md`, resolved relative to the file) is mounted by
+  # mapping each key back to its path. Empty mounts every key flat. Listing
+  # items mounts ONLY those.
+  #   - {key: participation-en.md, path: content/participation-en.md}
+  seedItems: []
   # `ir-cli org apply` walks owners.yaml entries that carry a `dataspace:` block
   # all the way to a promoted participant. It hands them **no STS secret**
   # (`D-51`): how a party authenticates to its own STS is not the anchor's to
@@ -269,3 +276,12 @@ global:
       memory: 256Mi
     limits:
       memory: 512Mi
+
+# ── helm test ─────────────────────────────────────────────────────────────────
+# On a participant release: its registry answers in-cluster, on the address the
+# EDC's Ingress forwards the participant's DID document, credentials and STS to
+# (the local doctor's "<p> registry" row; /health is deliberately not public).
+tests:
+  enabled: true
+  tlsVerify: true
+  imageTag: ""

@@ -67,6 +67,25 @@ UNIVERSAL_WEAK_VALUES = frozenset(
 )
 
 
+def weak_form(value: object) -> str:
+    """The form a value is compared to the weak lists in.
+
+    Case, surrounding space, ``_`` and ``-`` are ignored, so ``CHANGE_ME``,
+    ``Change-Me`` and ``changeme`` are one placeholder. It was compared after
+    ``lower()`` only, against a list holding ``changeme`` and ``change-me`` — and
+    ``CHANGE_ME``, the value every key of ``helm/secrets.example.yaml`` ships
+    with, passed every guard.
+    """
+    return str(value).strip().lower().replace("_", "").replace("-", "")
+
+
+def is_weak(value: object, extra: set[str] | frozenset[str] = frozenset()) -> bool:
+    """True when ``value`` is a universal weak value (or one of ``extra``),
+    compared in :func:`weak_form`."""
+    form = weak_form(value)
+    return form in {weak_form(w) for w in UNIVERSAL_WEAK_VALUES | set(extra)}
+
+
 #: Database passwords that mark a URL as the dev compose database (or as one
 #: nobody chose). Checked on the *password* of a URL, because a whole-value
 #: compare against :data:`UNIVERSAL_WEAK_VALUES` never matches a URL.
@@ -188,7 +207,7 @@ class ProductionGuard:
         text = str(value)
         if text in dev_defaults:
             self.add(setting, "still set to the dev default value", remediation)
-        elif text.strip().lower() in UNIVERSAL_WEAK_VALUES:
+        elif is_weak(text):
             self.add(setting, "set to a trivially weak value", remediation)
 
     def forbid_secret_equal_to_client_id(
@@ -231,6 +250,10 @@ class ProductionGuard:
                 "default, so this client's secret was never overridden",
                 remediation,
             )
+        elif secret and is_weak(secret):
+            # A placeholder (`CHANGE_ME`) or a weak word is no more a secret than
+            # the client id is; the equality check alone let it through.
+            self.add(setting, "is a placeholder or trivially weak value", remediation)
 
     def forbid_dev_database_url(
         self,
@@ -257,7 +280,7 @@ class ProductionGuard:
         if password is None:
             return
         weak = WEAK_DATABASE_PASSWORDS | set(weak_passwords or ())
-        if password.strip().lower() in weak:
+        if is_weak(password, weak):
             self.add(
                 setting,
                 "uses a dev or trivially weak database password",

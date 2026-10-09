@@ -533,3 +533,39 @@ def refuse_dev_database_in_production(entry_point: str) -> None:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
+
+def register_service_client_secret(guard, settings: Settings) -> None:
+    """Refuse a dev or placeholder ``IDENTITY_REGISTRY_SERVICE_CLIENT_SECRET``.
+
+    **Not on a participant instance.** Its one reader is ``registry_notify``, the
+    trust anchor telling connectors that the participant list changed; a
+    participant never notifies, so there the setting authenticates nothing. The
+    same rule as the STS secret, which is guarded only where it is read: refusing
+    a value nothing uses forced the chart to feed participants a real secret of
+    another client's under this one's name.
+    """
+    # `roles.PARTICIPANT`, spelt out: importing `roles` here would pull in every
+    # router.
+    if settings.role.strip().lower() == "participant":
+        return
+    # This service's own outbound credential — the one it actually
+    # authenticates with. It ships a dev default equal to the client id and was
+    # the only such secret with no guard. (`KEYCLOAK_CLIENT_SECRET` was guarded
+    # here instead and authenticated nothing; both it and its setting are gone.)
+    guard.forbid_default(
+        "IDENTITY_REGISTRY_SERVICE_CLIENT_SECRET",
+        settings.service_client_secret,
+        {"svc-ds-identity-registry"},
+        "Set the Keycloak client secret for svc-ds-identity-registry — this is "
+        "the credential the registry presents on its own outbound calls.",
+    )
+    # Catches the same secret when the client has been renamed, and the case
+    # where the realm was synced before the variable was set — see `KC-01`.
+    guard.forbid_secret_equal_to_client_id(
+        "IDENTITY_REGISTRY_SERVICE_CLIENT_SECRET",
+        settings.service_client_id,
+        settings.service_client_secret,
+        "Set a real secret for this client AND make sure the realm has it — a "
+        "realm synced before the variable was set still holds the client id.",
+    )

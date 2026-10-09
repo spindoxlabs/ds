@@ -39,49 +39,108 @@ excluded.
 > `ds-oauth2-proxy` is not optional wherever `ds-portal` is deployed: the portal
 > is no longer an OIDC client, so without it the human-facing host has no login
 > in front of it and the identity headers it reads are client-controlled. The full `helmfile.yaml.gotmpl` composes an authority plus any
-> number of participants and renders end-to-end through SOPS. Remaining work is
-> hardening and CI gates.
+> number of participants, as the base of a deployment's own helmfile.
 
-## Install
+## Install — from your own repository
+
+**ds is a public repository, so a deployment's values and its encrypted secrets
+live in the deployment's own repository, never here.** That repository has its
+own helmfile, which takes this one as its base (`every-secret-has-one-source`,
+M1), its own sops setup, and one values and one secrets file per environment:
+
+```yaml
+# <your deployment>/helmfile.yaml.gotmpl
+environments:
+  staging:                       # must be an environment ds declares: staging | production
+    values:
+      - overlay/staging/values.yaml        # baseDomain, namespaces, keycloak, participants
+    secrets:
+      - overlay/staging/secrets.sops.yaml  # every key of helm/secrets.example.yaml
+---
+helmfiles:
+  - path: ds/helm/helmfile.yaml.gotmpl     # ds as a submodule, pinned to a release tag
+    values:
+      - {{ toYaml .Values | nindent 8 }}   # your values and decrypted secrets, passed down
+```
 
 ```bash
-# 1. Prerequisites — CNPG Cluster, Keycloak realm, cert-manager ClusterIssuer,
-#    ingress controller. See docs/deployment/prerequisites.md
-
-# 2. Configure
-$EDITOR values.yaml                 # baseDomain, postgres, keycloak, participants
-cp secrets.example.yaml secrets.sops.yaml
-$EDITOR secrets.sops.yaml           # fill every CHANGE_ME
-#   generation helpers:
-#     openssl rand -hex 32
-#     python -c 'import secrets;print(secrets.token_urlsafe(32))'
-#     task secrets:keygen           # EC P-256 material → secrets/
-
-# 3. Encrypt (edit .sops.yaml with your age/KMS recipient first)
-sops --encrypt --in-place secrets.sops.yaml
-
-# 4. Deploy
-export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
-helmfile -e production diff
-helmfile -e production apply
+# 1. Prerequisites — CNPG roles, Keycloak realm clients, cert-manager, ingress.
+#    See docs/deployment/prerequisites.md
+# 2. Write your values (helm/values.example.yaml shows a participant entry) and
+#    your secrets (helm/secrets.example.yaml lists every key); encrypt with sops.
+# 3. Preflight the decrypted secrets — never prints a value:
+sops -d overlay/staging/secrets.sops.yaml > /tmp/secrets.dec.yaml
+task -d ds secrets:check FILE=/tmp/secrets.dec.yaml && rm /tmp/secrets.dec.yaml
+# 4. Render, then deploy
+helmfile -e staging template >/dev/null
+helmfile -e staging apply
+helm test -n <namespace> <release>     # each release's content checks, below
 ```
+
+Three things the base does that a deployment should know:
+
+- **Your environment name must be one ds declares** (`staging`, `production`).
+  Helmfile skips a sub-helmfile in an environment it does not declare, silently
+  (`no releases found`).
+- **ds's base `values.yaml` lists no participants.** Helmfile merges a list over
+  a list element by element, so an example list in the base would leak into
+  your render. ds's own example participants are in `values.example.yaml`, read
+  only by `helmfile -e example`.
+- **A participant's `connector`, `edc`, `provenance` and `portal` blocks are those
+  charts' values, forwarded whole.** Anything in `charts/<chart>/values.yaml` is
+  settable from your values; `secrets`, `participant`, `global` and
+  `existingSecret` are refused there (they come from the secrets file and the
+  participant entry). The old flat spellings (`connector.governanceConfigMap`,
+  `.notifyBackends`, …) fail the render naming the new key.
+
+A `secrets.sops.yaml` beside this file is still read if present (it is
+optional, and gitignored here), for an operator rendering from a ds checkout.
 
 ## Secrets
 
-`secrets.sops.yaml` is committed **encrypted** and decrypted by helmfile at
-render time. Its plaintext form must never be committed — the `.gitignore` here
-blocks the usual staging names, but the responsibility is yours.
+The chart never invents a secret value: templates use `required`, so a missing
+value fails the render instead of deploying a default nobody chose. On top of
+that, **the helmfile enforces a secret policy on the merged values** before any
+release renders — the one place where every release's values are in view:
+
+| Check | Where |
+|-------|-------|
+| every enabled participant has its secrets entry | every environment |
+| no placeholder (`CHANGE_ME` in any spelling) or committed dev default, at any depth | every environment but `example` |
+| no custody key shared: the anchor's and each participant's encryption key; two participants' encryption or EDC control keys | every environment but `example` |
+| every participant's `connectorClientSecret` equal (and equal to `svcEdcSecret`): all EDCs log in as the one client `svc-edc` | every environment |
+| posture A: `organisationClients.<alias>.connectorSecret` equals that participant's `organisationClientSecret` | every environment |
+| no EDR signing key from the committed dev fixtures | every environment |
+| `edcVault.edrSigningPublicJwk` is the private JWK without `d` (required for a provider) | every environment |
+| a literal `trustAnchorDomain` equals the derived `<hosts.trustAnchor>.<baseDomain>` | every environment |
+
+Each refusal names the key path, never the value. `task secrets:check FILE=<decrypted>.yaml`
+runs the same checks plus client secrets equal to their client id (mapped from
+`services/keycloak/clients*.yaml`) on the operator's machine.
 
 Two delivery modes, switchable without template changes:
 
 | Mode | How |
 |------|-----|
-| SOPS (default) | values in `secrets.sops.yaml` → rendered `Secret` per service |
+| Rendered (default) | values from your secrets file → rendered `Secret` per service |
 | Pre-created | set `existingSecret: <name>` per service → chart references, creates nothing |
 
-The chart never invents a secret value: templates use `required`, so a missing
-value fails the render instead of deploying a default nobody chose. Full key
-reference: [Secrets](../docs/deployment/secrets.md).
+Full key reference: [Secrets](../docs/deployment/secrets.md).
+
+## `helm test`
+
+Each chart that owns a surface ships a test Pod asserting **content**, not
+status — the local doctor's chart-owned rows on a cluster:
+
+| Release | Asserts |
+|---------|---------|
+| `ds-edc-<p>` | `https://<p>.<baseDomain>/.well-known/did.json` through the Ingress has `id` = the participant's DID |
+| `ds-identity-registry-<p>` | the registry answers in-cluster and holds the participant's DID document |
+| `ds-connector-<p>` (provider with governance) | `/provider/assets`, as the organisation client, is non-empty and as large as the governance's exposed set |
+| `ds-portal-<p>` | through the Ingress, no session: `/join` is 200, `/` is not |
+
+They run the ds-connector image of the same release. `tests.tlsVerify: false`
+(per chart) is for a rehearsal cluster with a private CA only.
 
 ## Security posture (enforced by the charts)
 
@@ -98,11 +157,12 @@ reference: [Secrets](../docs/deployment/secrets.md).
 ## Local validation
 
 ```bash
-helm dependency update ./charts/ds-identity-registry
-helm lint ./charts/ds-identity-registry \
-  --set secrets.identityRegistryEncryptionKey=x \
-  --set secrets.serviceClientSecret=y --set secrets.dbPassword=z
-
-helmfile -e production template                                  # the real gate
-helmfile -e production template | kubeconform -strict -summary   # if installed
+task helm:test                       # lint, the example render, and the pilot-shaped
+                                     # deployment rendered through its own helmfile
+helmfile -e example template         # the whole set from the committed example
 ```
+
+`task helm:test` copies `helm/` to a temporary directory (so `helm dependency
+update` never writes the tree) and asserts over the parsed objects; the
+pilot-shaped values are `tests/pilot/values.yaml`. See the store playbook
+*rendering-and-testing-the-charts*.

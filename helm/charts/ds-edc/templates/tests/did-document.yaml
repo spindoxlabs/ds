@@ -1,0 +1,23 @@
+{{- /*
+`helm test`: the participant host serves this participant's DID document, with
+the right `id`, through the public Ingress — the address a counterparty resolves.
+*/}}
+{{- if and .Values.tests.enabled .Values.ingress.enabled }}
+{{- $script := `
+import os, sys
+import httpx
+
+url, did = os.environ["DID_URL"], os.environ["EXPECT_DID"]
+r = httpx.get(url, timeout=20, verify=os.environ["TEST_TLS_VERIFY"] == "true")
+if r.status_code != 200:
+    sys.exit(f"{url} answered {r.status_code}")
+got = r.json().get("id")
+if got != did:
+    sys.exit(f"{url} serves a DID document for {got!r}, not {did!r}")
+print(f"{url}: id = {did}")
+` }}
+{{- $env := list
+    (dict "name" "DID_URL" "value" (printf "https://%s/.well-known/did.json" (include "edc.host" .)))
+    (dict "name" "EXPECT_DID" "value" (include "edc.did" .)) }}
+{{ include "ds.testPod" (dict "ctx" . "name" "did-document" "script" $script "env" $env) }}
+{{- end }}

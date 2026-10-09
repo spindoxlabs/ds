@@ -9,72 +9,15 @@ Every assertion names the change that turns it red.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 from collections import defaultdict
 from pathlib import Path
 
 import pytest
-import yaml
-
-HELM_DIR = Path(__file__).resolve().parent.parent
-CHARTS = sorted(
-    p.name for p in (HELM_DIR / "charts").iterdir() if (p / "Chart.yaml").is_file()
-)
+from conftest import CHARTS, HELM_DIR, _key, _render, _run
 
 # The value that selected the removed ExternalSecret mode. Rendering with it set
 # proves no chart still reads it.
 FORMER_EXTERNAL_SECRETS_FLAG = "global.externalSecrets.enabled=true"
-
-
-def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
-
-
-def _objects(manifest: str) -> list[dict]:
-    return [
-        doc
-        for doc in yaml.safe_load_all(manifest)
-        if isinstance(doc, dict) and doc.get("kind")
-    ]
-
-
-def _key(obj: dict) -> tuple[str, str, str]:
-    meta = obj.get("metadata") or {}
-    return (obj["kind"], meta.get("namespace") or "", meta["name"])
-
-
-@pytest.fixture(scope="session")
-def helm_copy(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    dest = tmp_path_factory.mktemp("render") / "helm"
-    shutil.copytree(
-        HELM_DIR,
-        dest,
-        ignore=shutil.ignore_patterns(
-            "Chart.lock", "tests", "__pycache__", ".pytest_cache"
-        ),
-    )
-    for chart in CHARTS:
-        vendored = dest / "charts" / chart / "charts"
-        if vendored.exists():
-            shutil.rmtree(vendored)
-        result = _run(["helm", "dependency", "update", f"charts/{chart}"], dest)
-        assert result.returncode == 0, (
-            f"helm dependency update {chart}:\n{result.stderr}"
-        )
-    return dest
-
-
-def _render(helm_copy: Path, *extra: str) -> list[dict]:
-    result = _run(
-        ["helmfile", "-e", "example", "template", "--skip-deps", *extra], helm_copy
-    )
-    assert result.returncode == 0, (
-        f"helmfile -e example template {' '.join(extra)}:\n{result.stderr}"
-    )
-    objects = _objects(result.stdout)
-    assert objects, "the render produced no objects"
-    return objects
 
 
 @pytest.fixture(scope="session")
@@ -127,6 +70,8 @@ def test_every_release_with_a_secret_template_renders_its_secret(
     chart_of_release: dict[str, str] = {}
     for obj in flagged_render:
         labels = (obj.get("metadata") or {}).get("labels") or {}
+        if labels.get("app.kubernetes.io/component") == "test":
+            continue  # a `helm test` Pod, not a release
         release = labels.get("app.kubernetes.io/instance")
         chart_label = labels.get("helm.sh/chart", "")
         chart = next(
@@ -202,7 +147,7 @@ def provider_with_governance_render(helm_copy: Path) -> list[dict]:
     return _render(
         helm_copy,
         "--state-values-set",
-        "participants[0].connector.governanceConfigMap=gov",
+        "participants[0].connector.governance.configMap=gov",
     )
 
 
@@ -226,9 +171,9 @@ def test_the_sync_job_asks_the_organisation_client_for_the_publish_grant(
         )
         assert "SYNC_SCOPE" in script, job["metadata"]["name"]
         if env["SYNC_CLIENT_ID"].startswith("svc-ds-connector-"):
-            assert env.get("SYNC_SCOPE") == "connector.provider.write", job[
-                "metadata"
-            ]["name"]
+            assert env.get("SYNC_SCOPE") == "connector.provider.write", job["metadata"][
+                "name"
+            ]
         else:
             assert "SYNC_SCOPE" not in env, job["metadata"]["name"]
 

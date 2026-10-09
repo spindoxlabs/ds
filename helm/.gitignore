@@ -1,4 +1,5 @@
-# SOPS-encrypted secrets are safe to commit; the decrypted staging file is not.
+# Decrypted secrets never belong in git; and here, in a public repository, the
+# encrypted ones do not either (see the end of this file).
 secrets.dec.yaml
 secrets.yaml
 /tmp-secrets.yaml
@@ -8,4 +9,7 @@ secrets.yaml
 charts/*/charts/
 charts/*/Chart.lock
 
-# secrets.sops.yaml IS intended to be committed (encrypted). It is NOT ignored.
+# A deployment's secrets live in its OWN repository (helm/README.md, "Install —
+# from your own repository"): ds is public, and a real deployment's ciphertext
+# must not be committed here, encrypted or not. Ignored so it cannot be.
+secrets.sops.yaml

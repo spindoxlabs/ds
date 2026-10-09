@@ -153,3 +153,13 @@ global:
     tls: {clusterIssuer: "", secretName: ""}
   networkPolicy: {enabled: true}
   resources: {}
+
+# ── helm test ─────────────────────────────────────────────────────────────────
+# Fetches https://<participant host>/.well-known/did.json **through the Ingress**
+# — what a counterparty resolves — and requires the document's `id` to be this
+# participant's DID (the local doctor's `<p> did:web` row: content, not status).
+# `tlsVerify: false` only for a rehearsal cluster with a private CA.
+tests:
+  enabled: true
+  tlsVerify: true
+  imageTag: ""

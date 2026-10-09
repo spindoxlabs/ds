@@ -274,8 +274,8 @@ clients:
       # this client since 2026-10-05:** identity-registry bounds a membership
       # write to the caller's own organisation, and a plain service token names
       # none. Kept until the onboarding service writes memberships as its
-      # organisation's client (`svc-ds-connector-<alias>`), as it already does
-      # for consent; remove it then.
+      # organisation's collector client (`svc-ds-collector-<alias>`, ADR-0026);
+      # remove it then — after that switch, as ADR-0026 orders.
       - identity-registry.memberships.write
       # Bind the person's Keycloak user to their dataspace DID. This writes a
       # mapping row in the registry's own database and nothing else — the
@@ -288,9 +288,11 @@ clients:
       # **No `connector.consent.provision`** (removed 2026-09-17, plan
       # `a-collector-registers-consent-at-the-holder`). The connector refuses a
       # plain service token on `POST /consent/admin/shares`: it names no
-      # organisation. The onboarding service registers a member's consent with
-      # its organisation's own client, `svc-ds-connector-<alias>` (created by
-      # `ir-cli keycloak org-sync`), which holds the permission.
+      # organisation. The onboarding service registers a member's consent as
+      # its organisation's **collector** client, `svc-ds-collector-<alias>`
+      # (ADR-0026; created by `ir-cli keycloak org-sync` for an organisation
+      # that declares `collects_consent`), which holds the permission — not as
+      # the organisation's connector client.
       # Read that decision back before exporting against it: who currently
       # consents to this offer (GET /consent/admin/shares). Separate from
       # `.provision` because a write grant must not carry bulk subject

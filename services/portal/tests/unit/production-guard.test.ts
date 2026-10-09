@@ -125,6 +125,35 @@ describe('forbidDefault — universal weak values, as in ds_auth', () => {
 	});
 });
 
+describe('placeholders in any spelling, as in ds_auth (G1, G2)', () => {
+	it.each(['CHANGE_ME', 'Change-Me', 'CHANGEME', ' change_me '])(
+		'forbidDefault flags %j',
+		async (value) => {
+			const { ProductionGuard } = await load();
+			const guard = new ProductionGuard('svc', 'production');
+			guard.forbidDefault('SOME_SECRET', value, ['the-dev-default'], 'fix it');
+			expect(guard.violations).toHaveLength(1);
+		},
+	);
+
+	it('passes a real value that merely contains the word', async () => {
+		const { ProductionGuard } = await load();
+		const guard = new ProductionGuard('svc', 'production');
+		guard.forbidDefault('SOME_SECRET', 'change-me-later-9f2c', [], 'fix it');
+		expect(guard.violations).toHaveLength(0);
+	});
+
+	it.each(['CHANGE_ME', 'password'])(
+		'forbidSecretEqualToClientId flags the weak secret %j',
+		async (value) => {
+			const { ProductionGuard } = await load();
+			const guard = new ProductionGuard('svc', 'production');
+			guard.forbidSecretEqualToClientId('SOME_SECRET', 'svc-ds-portal', value, 'fix it');
+			expect(guard.violations).toHaveLength(1);
+		},
+	);
+});
+
 describe('the portal guard', () => {
 	const GOOD = {
 		DS_ENV: 'production',

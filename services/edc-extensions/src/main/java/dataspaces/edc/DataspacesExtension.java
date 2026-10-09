@@ -521,6 +521,8 @@ public class DataspacesExtension implements ServiceExtension {
             );
         }
 
+        guardInternalCredentials(context);
+
         context.getMonitor().info(
             "ds-connector internal API: authenticating as %s via client_credentials".formatted(clientId)
         );
@@ -562,6 +564,23 @@ public class DataspacesExtension implements ServiceExtension {
      * rather than a client id literally named {@code ${...}} that 401s on every
      * call for reasons nothing explains.
      */
+    /**
+     * G5: the credentials this EDC holds that a chart could leave at a dev value —
+     * its internal client secret and its control API key. Refused under any
+     * {@code DS_ENV} but {@code dev}; the vault seed has its own check in
+     * {@link FilesystemVaultSeederExtension}. Names the environment variable a
+     * chart sets, never the value.
+     */
+    static void guardInternalCredentials(ServiceExtensionContext context) {
+        var guard = new ProductionGuard("ds-edc", context.getSetting(ProductionGuard.DS_ENV, ""));
+        guard.checkClientSecret(
+            "DS_CONNECTOR_INTERNAL_CLIENT_SECRET",
+            setting(context, "ds.connector.internal.client.id"),
+            setting(context, "ds.connector.internal.client.secret"));
+        guard.checkSecret("WEB_HTTP_CONTROL_AUTH_KEY", setting(context, "web.http.control.auth.key"));
+        guard.enforce(context.getMonitor());
+    }
+
     private static String setting(ServiceExtensionContext context, String key) {
         String value = context.getSetting(key, "");
         if (value == null || value.contains("${")) {

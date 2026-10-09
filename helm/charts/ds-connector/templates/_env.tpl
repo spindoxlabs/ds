@@ -21,6 +21,32 @@ addressable from the participant name alone — NOT from this release's name.
 {{- printf "http://ds-identity-registry.%s.svc.cluster.local:30005" ((.Values.global).namespaces).authority -}}
 {{- end -}}
 
+{{/*
+True when this connector serves an EDR verification key: a provider must (the
+data plane verifies its EDRs with it), so the key is required there.
+*/}}
+{{- define "conn.servesEdrKey" -}}
+{{- $provider := has .Values.participant.role (list "provider" "both") -}}
+{{- if and $provider (not .Values.existingSecret) (not .Values.secrets.edrPublicJwk) -}}
+{{- fail "secrets.edrPublicJwk is required for a provider: the data plane verifies EDRs with the key /internal/edr-jwks serves (the public half of the ds-edc release's edrSigningPrivateJwk)" -}}
+{{- end -}}
+{{- if or .Values.secrets.edrPublicJwk (and $provider .Values.existingSecret) -}}true{{- end -}}
+{{- end -}}
+
+{{/* The public JWK on one line, refusing private members. */}}
+{{- define "conn.edrPublicJwk" -}}
+{{- $jwk := .Values.secrets.edrPublicJwk | fromJson -}}
+{{- if hasKey $jwk "Error" -}}
+{{- fail (printf "secrets.edrPublicJwk is not a JSON object: %s" (get $jwk "Error")) -}}
+{{- end -}}
+{{- range $private := list "d" "p" "q" "dp" "dq" "qi" -}}
+{{- if hasKey $jwk $private -}}
+{{- fail (printf "secrets.edrPublicJwk carries the private member %q — the connector holds no private material; give it the public half only" $private) -}}
+{{- end -}}
+{{- end -}}
+{{- $jwk | toJson -}}
+{{- end -}}
+
 {{- define "conn.env" -}}
 {{- $edc := include "conn.edcService" . -}}
 {{- include "ds.env.common" . }}
@@ -100,6 +126,22 @@ governance.yaml, which the governance ConfigMap carries.
 */}}
 - name: CONNECTOR_GOVERNANCE_YAML_PATH
   value: {{ printf "%s/governance.yaml" .Values.governance.mountPath | quote }}
+{{- with .Values.governance.odrlProfileFile }}
+{{- if not $.Values.governance.configMap }}
+{{- fail "governance.odrlProfileFile names a file in governance.configMap, which is not set" }}
+{{- end }}
+# The deployment's ODRL profile, from the governance mount (row 9).
+- name: CONNECTOR_ODRL_PROFILE_PATH
+  value: {{ printf "%s/%s" $.Values.governance.mountPath . | quote }}
+{{- end }}
+{{- if include "conn.servesEdrKey" . }}
+# The EDR verification key (row 4): a one-line vault file from this release's
+# own Secret, read by GET /internal/edr-jwks.
+- name: CONNECTOR_EDC_VAULT_FILE
+  value: {{ printf "%s/edr-verification.properties" .Values.edr.mountPath | quote }}
+- name: CONNECTOR_EDR_SIGNER_ALIAS
+  value: {{ .Values.edr.signerAlias | quote }}
+{{- end }}
 {{- if .Values.governance.overlayName }}
 - name: CONNECTOR_GOVERNANCE_OVERLAY_NAME
   value: {{ .Values.governance.overlayName | quote }}

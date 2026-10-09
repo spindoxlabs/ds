@@ -1,0 +1,116 @@
+# ==============================================================================
+# ds's own example participants — read by the `example` environment only
+# ==============================================================================
+# `helmfile -e example template` and the render tests use these. A deployment
+# writes its own list in its own values; values.yaml, "Participants", says why
+# the base carries none. Every key an entry takes is shown on `rec`.
+#
+# Public host per participant: <name>.<global.baseDomain>, serving exactly
+#   /.well-known/did.json, /.well-known/dspace-version → identity-registry, EDC
+#   /credentials/*, /sts/*, /users/*  → identity-registry (DCP surfaces)
+#   /protocol/2025-1/*      → EDC DSP
+# Everything else on that host returns 404.
+# ==============================================================================
+participants:
+  - name: rec
+    enabled: true
+    role: provider # provider | consumer | both
+
+    # did: "" → derived as did:web:<name>.<global.baseDomain>. Override to pin.
+    did: ""
+
+    # The dataset API is participant-operated and NOT deployed by these charts,
+    # and it needs no value here: it authenticates to the connector's
+    # /internal/dataplane/authorize with a Keycloak bearer carrying
+    # `connector.internal` (`svc-ds-dataset-api`), so ds is the callee. It runs
+    # in the host platform's namespace: admit it with
+    # `connector.networkPolicy.ingressFrom`.
+    # Where a consumer is sent for the data is governance.yaml's
+    # data_address.base_url, carried by the governance ConfigMap.
+
+    # **This block is the ds-connector chart's values**, forwarded whole (see
+    # helm/charts/ds-connector/values.yaml for every key). Secrets never go
+    # here — they come from the secrets file. The most used:
+    connector:
+      replicaCount: 1
+      notify:
+        # Webhook notifications are rejected unless the host is allowlisted.
+        # **"" is none** (not the string "null", which `build_notifier` does
+        # not recognise).
+        backends: "" # "" | smtp | webhook (comma-separated)
+        webhookAllowedHosts: [] # required if backends includes webhook
+      governance:
+        # "" mounts nothing and the catalogue stays empty — there is no
+        # baked-in governance.yaml in the image. A provider needs this set.
+        configMap: ""
+        overlayName: "" # merges governance.<name>.yaml
+        # A deployment's own ODRL profile, a key of that ConfigMap. Unset, the
+        # connector loads ds's bundled profile and every offer naming a
+        # deployment-added purpose stops publishing.
+        odrlProfileFile: ""
+        # A digest of what the deployment assembled into the ConfigMap. A
+        # changed governance with unchanged values otherwise rolls nothing and
+        # re-runs no sync; with this, it is a rollout and therefore a sync.
+        checksum: ""
+      # Who else may call this connector — the host platform's consent writer
+      # and data plane, by namespace and pod labels:
+      #   ingressFrom:
+      #     - {namespace: host-platform, podLabels: {app.kubernetes.io/name: dataset-api}}
+      networkPolicy:
+        ingressFrom: []
+
+    provenance:
+      replicaCount: 1
+
+    edc:
+      replicaCount: 1
+
+    federatedCatalog:
+      enabled: true
+      replicaCount: 1
+      crawlInterval: 300
+
+    portal:
+      # The portal is deployed alongside exactly one participant.
+      enabled: true
+      replicaCount: 1
+
+  # A **second provider**, and one shaped differently from the first (`D-54`,
+  # `DID-15`): a grid operator shares its own infrastructure data and has no
+  # members, so nothing downstream may assume a participant holds credentials
+  # for people. Disabled by default — a deployment enables the participants it
+  # actually has — but present, because a chart that can only express one
+  # provider is a chart that encodes the dev fixture.
+  - name: grid-operator
+    enabled: false
+    role: provider
+    did: ""
+    connector:
+      replicaCount: 1
+      # Its own governance. The consent offers of the participant that *has*
+      # members are not this one's to publish.
+      governance:
+        configMap: ""
+    provenance:
+      replicaCount: 1
+    edc:
+      replicaCount: 1
+    federatedCatalog:
+      enabled: false
+    portal:
+      enabled: false
+
+  - name: third-party
+    enabled: true
+    role: consumer
+    did: ""
+    connector:
+      replicaCount: 1
+    provenance:
+      replicaCount: 1
+    edc:
+      replicaCount: 1
+    federatedCatalog:
+      enabled: false
+    portal:
+      enabled: false

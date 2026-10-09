@@ -358,3 +358,44 @@ def test_a_dev_database_url_only_warns_under_dev():
     )
     assert len(guard.violations) == 1
     guard.enforce()  # must not raise
+
+
+# ── Placeholders in any spelling (G1, G2) ────────────────────────────────────
+#
+# Every value in `helm/secrets.example.yaml` is `CHANGE_ME`, and the weak list
+# held `changeme` and `change-me` only — so the one placeholder the example file
+# is made of passed every guard. A placeholder is matched with case, `_`, `-`
+# and no separator all counting as the same word.
+
+
+@pytest.mark.parametrize(
+    "value", ["CHANGE_ME", "Change-Me", "changeme", " change_me ", "CHANGEME"]
+)
+def test_a_placeholder_in_any_spelling_is_weak(value):
+    guard = ProductionGuard("svc", env="production")
+    guard.forbid_default("SECRET", value, set(), "generate one")
+    assert [v.setting for v in guard.violations] == ["SECRET"]
+
+
+@pytest.mark.parametrize("value", ["change-me-later-9f2c", "exchange_mechanism"])
+def test_a_real_value_containing_the_word_passes(value):
+    guard = ProductionGuard("svc", env="production")
+    guard.forbid_default("SECRET", value, set(), "generate one")
+    assert guard.violations == []
+
+
+@pytest.mark.parametrize("secret", ["CHANGE_ME", "changeme", "password", "secret"])
+def test_a_client_secret_that_is_a_weak_value_is_refused(secret):
+    """Equal to its client id is one dev default; a placeholder is another, and
+    the client-id check alone let it through (G2)."""
+    guard = ProductionGuard("svc", env="production")
+    guard.forbid_secret_equal_to_client_id("SVC_SECRET", "svc-ds-portal", secret, "r")
+    assert [v.setting for v in guard.violations] == ["SVC_SECRET"]
+
+
+def test_a_placeholder_database_password_is_flagged():
+    guard = ProductionGuard("svc", env="production")
+    guard.forbid_dev_database_url(
+        "DB_URL", "postgresql+asyncpg://app:CHANGE_ME@db:5432/app", "fix"
+    )
+    assert [v.setting for v in guard.violations] == ["DB_URL"]

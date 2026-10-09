@@ -21,19 +21,24 @@ The charts emit no `ExternalSecret`. A deployment that keeps its values in an ex
 (Vault, a cloud secret manager) has that store produce the Secret, and sets `existingSecret`
 to its name; the keys it must carry are the ones the chart's `templates/secret.yaml` renders.
 
-## The SOPS path
+## The SOPS path — in your own repository
+
+**ds is a public repository: a deployment's secrets file lives in the deployment's
+own repository, encrypted with that repository's sops setup**, and its helmfile
+passes the decrypted values down to ds's (see `helm/README.md`, *Install — from your
+own repository*). `helm/secrets.sops.yaml` is gitignored in ds so that a real
+ciphertext cannot be committed here by accident.
 
 ```bash
-cd helm
-cp secrets.example.yaml secrets.sops.yaml
-$EDITOR secrets.sops.yaml          # fill every CHANGE_ME
-$EDITOR .sops.yaml                 # set your age or KMS recipient
-sops --encrypt --in-place secrets.sops.yaml
+# in the deployment repository
+cp ds/helm/secrets.example.yaml overlay/staging/secrets.sops.yaml
+$EDITOR overlay/staging/secrets.sops.yaml   # fill every CHANGE_ME
+$EDITOR .sops.yaml                          # your age or KMS recipient
+sops --encrypt --in-place overlay/staging/secrets.sops.yaml
 ```
 
-`secrets.sops.yaml` is committed **encrypted** and decrypted by helmfile at render time.
-`.sops.yaml` sets `encrypted_regex: ^(secrets)$`, so keys stay readable and only values are
-encrypted — diffs remain reviewable.
+With `encrypted_regex: ^(secrets)$` keys stay readable and only values are
+encrypted, so diffs remain reviewable.
 
 ```bash
 age-keygen -o ~/.config/sops/age/keys.txt
@@ -41,9 +46,8 @@ export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
 ```
 
 !!! danger "The plaintext form must never be committed"
-    `helm/.gitignore` blocks the usual staging names, but the responsibility is yours.
-    `secrets.sops.yaml` itself is *intentionally not ignored* — it is meant to be committed,
-    encrypted.
+    Decrypt only to a gitignored path (`secrets.dec.yaml` is ignored in ds's `helm/`), run
+    the preflight on it, delete it.
 
 ### Generating values
 
@@ -86,48 +90,31 @@ keypair. It is idempotent — existing key files are preserved, never overwritte
 
 | Key | Reaches |
 |---|---|
-| `identityRegistryEncryptionKey`, `keycloakClientSecret`, `keycloakAdminUsername`, `keycloakAdminPassword` | `ds-identity-registry` |
-| `svcDsConnectorSecret`, `trustAnchorPublicJwk` | `ds-connector` |
+| `identityRegistryEncryptionKey`, `svcDsIdentityRegistrySecret` | the anchor's `ds-identity-registry` (the service client secret is read only there: a participant registry holds none) |
+| `keycloakAdminUsername`, `keycloakAdminPassword`, `organisationClients.*` | the anchor, only with `global.keycloak.sync.enabled` (posture A) |
 | `svcDsFederatedCatalogSecret` | `ds-federated-catalog` |
 | `svcDsPortalSecret` | `ds-portal` |
 | `oauth2ProxyCookieSecret`, `oauth2ProxyClientSecret` | `ds-oauth2-proxy` |
+| `svcDsOnboardingSecret`, `svcDsDatasetApiSecret`, `svcDsConnectorSecret`, `svcEdcSecret` | no chart — the realm, and the process outside ds that authenticates as the client |
 | `postgres.<db>` | the owning service |
-| `participants.<name>.*` | `ds-edc` (and the EDC API key also to `ds-connector`) |
+| `participants.<name>.identityRegistryEncryptionKey`, `.stsSecret` | the participant's own `ds-identity-registry-<name>` (and `stsSecret` also its EDC vault) |
+| `participants.<name>.edcCallbackKey` | its EDC vault **and** its connector — one value, two holders |
+| `participants.<name>.edcControlApiKey`, `.connectorClientSecret`, `.edcVault.edrSigningPrivateJwk` | its `ds-edc` |
+| `participants.<name>.edcVault.edrSigningPublicJwk` | its `ds-connector`, served at `/internal/edr-jwks` — the public half only |
+| `participants.<name>.organisationClientSecret`, `.connectorAtRestKeys`, `.connectorKeyIndexSecret`, `.publisherSecret` | its `ds-connector` (`publisherSecret` only with `connector.sync.clientId`) |
+| `participants.<name>.provenanceSubjectPseudonymKey` | its `ds-provenance` — set once, never rotated |
+
+**Values that must agree**, and how the render holds them: `edcCallbackKey` and `stsSecret`
+are fanned out from one key each. `connectorClientSecret` is the **same for every
+participant** and equal to `svcEdcSecret` — every EDC logs in as the one realm client
+`svc-edc` — and the render refuses two different values. Posture A's
+`organisationClients.<alias>.connectorSecret` must equal that participant's
+`organisationClientSecret`; the render refuses a difference. The EDR key's two halves are
+supplied by the operator, kept side by side, and checked to agree.
 
 `keycloakAdminUsername` / `keycloakAdminPassword` are needed **only** when Keycloak sync or
 runtime mutation is enabled. Prefer provisioning the realm out-of-band and leaving both empty —
 it keeps admin credentials out of the application namespace entirely.
-
-### The trust anchor
-
-| Key | Consumer | Notes |
-|---|---|---|
-| `trustAnchorPublicJwk` | ds-connector **and** ds-provenance | the public JWK from `task secrets:keygen`, mounted as a file |
-
-It verifies user Verifiable Credentials on the consent and consumer APIs, and on a data
-subject's own provenance view. Leaving it unset means the data-subject sovereignty control is
-off, which is why both templates require it.
-
-### Database roles
-
-One password per least-privilege role, keyed `<service>_<participant>` for participant-scoped
-services:
-
-```yaml
-secrets:
-  postgres:
-    identity_registry: …
-    connector_rec: …
-    provenance_rec: …
-    edc_rec: …
-    connector_third_party: …
-    provenance_third_party: …
-    edc_third_party: …
-```
-
-Role names match the databases provisioned in
-[`helm/docs/cnpg-cluster.example.yaml`](https://github.com/spindoxlabs/ds/blob/main/helm/docs/cnpg-cluster.example.yaml).
-Adding a participant means adding three entries.
 
 ## The committed dev material is public
 
@@ -140,17 +127,19 @@ purpose so the stack runs with no setup:
   literal client secret, direct access grants enabled.
 
 **A production deployment must not mount or import either.** The `ds-edc` chart renders its
-vault from `secrets.sops.yaml`, never from the committed files: the vault seeder loads whatever
-it is given with no placeholder detection, so this is a chart responsibility, not a runtime one.
+vault from the deployment's secrets, never from the committed files. Three checks now refuse a
+fixture key that was pasted in: the render policy, `task secrets:check`, and the EDC itself,
+whose vault seeder refuses a fixture key, `insecure-dev-secret` or a placeholder unless
+`DS_ENV=dev`.
 
 ## Rotation
 
 | Secret | Rotatable | How |
 |---|---|---|
-| Keycloak client secrets | yes | rotate in Keycloak, update `secrets.sops.yaml`, apply — the `checksum/secret` annotation rolls the pods |
-| `edcApiKey` | yes, with coordination | shared by `ds-edc` and `ds-connector`; update both together |
+| Keycloak client secrets | yes | **realm first** — the realm sync never changes an existing client's secret — then the secrets file, apply; the `checksum/secret` annotation rolls the pods |
+| `edcCallbackKey` | yes | one key feeds the EDC vault and the connector, so one apply rolls both |
 | `oauth2ProxyCookieSecret` | yes | invalidates every active browser session |
-| `edrSigningPrivateJwk` | yes | in-flight EDRs signed with the old key stop verifying |
+| `edrSigningPrivateJwk` + `edrSigningPublicJwk` | yes, together in one edit | in-flight EDRs signed with the old key stop verifying; the connector rolls on its own Secret and serves the new public key |
 | Database passwords | yes | rotate the CNPG role first, then the values |
 | `identityRegistryEncryptionKey` | **no automatic path** | requires re-encrypting the DID private-key table |
 
@@ -161,12 +150,20 @@ only honest meaning of "send it again" — and it is what makes a leaked bundle 
 ## Verifying
 
 ```bash
-cd helm
-export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
-helmfile -e production template >/dev/null && echo "every required secret is wired"
+# in the deployment repository
+sops -d overlay/staging/secrets.sops.yaml > secrets.dec.yaml
+task -d ds secrets:check FILE=$PWD/secrets.dec.yaml; rm secrets.dec.yaml
+helmfile -e staging template >/dev/null && echo "every required secret is wired"
 ```
 
-This is the check to wire into CI, together with `task secrets:check`, which refuses any file
-still carrying a `CHANGE_ME`, a known dev default, a service secret equal to its own client id,
-the demo-identity flag, or `DS_ENV=dev` (unset, empty or any other value is production, so only
-an explicit `dev` is refused).
+`task secrets:check` on a decrypted helm secrets file reports placeholders and committed dev
+defaults at any depth (the dev cookie secret and the EDR fixture keys included), a client
+secret equal to its client id (the mapping is derived from `services/keycloak/clients*.yaml`),
+a custody key shared between two holders, and a participant whose public EDR JWK is not the
+public half of its private one. It never prints a value. On an `.env` file it keeps its
+original checks (`CHANGE_ME`, dev defaults, a service secret equal to its client id, the
+demo-identity flag, `DS_ENV=dev`).
+
+The render itself enforces the same policy on the merged values (`helm/README.md`,
+*Secrets*), so a placeholder or a shared custody key fails `helmfile template` in every
+environment but `example`.

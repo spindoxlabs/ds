@@ -24,22 +24,25 @@ export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
 
 ## Install
 
+From the deployment's own repository, whose helmfile takes ds's as its base (see
+`helm/README.md`, *Install — from your own repository*, for the parent helmfile):
+
 ```bash
-# 1. Prerequisites — a CNPG Cluster, a Keycloak realm, a cert-manager issuer, an ingress
-#    controller. See Prerequisites and Keycloak requirements.
+# 1. Prerequisites — CNPG roles and databases, the Keycloak realm's clients, a
+#    cert-manager issuer, an ingress controller. See Prerequisites and Keycloak.
 
-# 2. Configure
-$EDITOR values.yaml                 # baseDomain, postgres, keycloak, participants
-cp secrets.example.yaml secrets.sops.yaml
-$EDITOR secrets.sops.yaml           # fill every CHANGE_ME
-$EDITOR .sops.yaml                  # set your age or KMS recipient
+# 2. Configure, in the deployment repository
+$EDITOR overlay/staging/values.yaml          # baseDomain, namespaces, keycloak, participants
+$EDITOR overlay/staging/secrets.sops.yaml    # every key of ds/helm/secrets.example.yaml (sops)
 
-# 3. Encrypt
-sops --encrypt --in-place secrets.sops.yaml
+# 3. Preflight the decrypted secrets (never prints a value)
+sops -d overlay/staging/secrets.sops.yaml > secrets.dec.yaml
+task -d ds secrets:check FILE=$PWD/secrets.dec.yaml; rm secrets.dec.yaml
 
-# 4. Dry run, then apply
-helmfile -e production diff
-helmfile -e production apply
+# 4. Dry run, apply, then the content checks
+helmfile -e staging diff
+helmfile -e staging apply
+helm test -n <participant namespace> ds-edc-<participant>     # and each release below
 ```
 
 `helmDefaults` sets `wait`, `atomic` and a 600-second timeout, so a release that fails to become
@@ -94,23 +97,28 @@ log names what was published and what was withdrawn.
 ## Validate before you apply
 
 ```bash
-# re-resolve the shared library chart after editing it
-helm dependency update ./charts/ds-identity-registry
-
-helm lint ./charts/ds-identity-registry \
-  --set secrets.identityRegistryEncryptionKey=x \
-  --set secrets.keycloakClientSecret=y \
-  --set secrets.dbPassword=z
-
-# full render through SOPS — the intended gate
-helmfile -e production template
-
-# optional schema validation
-helmfile -e production template | kubeconform -strict -summary
+task helm:test                  # in ds: lint, the example render, the pilot-shaped render
+helmfile -e staging template    # in the deployment repository: the real values, the real gate
+helmfile -e staging template | kubeconform -strict -summary   # optional schema validation
 ```
 
-A successful full render proves every mandatory secret is wired, because the Secret templates
-use `required`. A failed render names the missing key.
+A successful render proves every mandatory secret is wired (the Secret templates use
+`required`) **and** that the secret policy holds: no placeholder or dev default, no custody key
+shared, `svc-edc`'s secret equal everywhere, the EDR key halves agreeing, one trust-anchor host.
+A failed render names the key, never the value.
+
+## After an install or upgrade: `helm test`
+
+| Release | What it asserts |
+|---|---|
+| `ds-edc-<p>` | the participant host serves the DID document through the Ingress, `id` = the participant's DID |
+| `ds-identity-registry-<p>` | the participant registry answers in-cluster and holds that DID document |
+| `ds-connector-<p>` | the catalogue, read as the organisation client, is non-empty and as large as the governance's exposed set |
+| `ds-portal-<p>` | through the Ingress, with no session, `/join` is 200 and `/` is not |
+
+A failed test Pod is kept (`before-hook-creation`), so `kubectl logs` says why. The rows the
+local doctor checks that read systems ds does not deploy — the data plane, the node's own
+catalogue, the gold-only gate — stay the deployment's checks.
 
 !!! note "`ds-common` is a `file://` dependency"
     After editing it, run `helm dependency update ./charts/<service>` (or delete the vendored
@@ -141,6 +149,21 @@ helmfile -e production -l name=ds-connector-rec apply
 `helmfile diff` before every apply. The Deployments carry a `checksum/secret` annotation, so a
 secret change rolls the pods even when nothing else in the spec moved — expect a restart in the
 diff when you rotate anything.
+
+### A governance change is a checksum change
+
+The governance ConfigMap is the deployment's, built outside these charts. Rebuilding it with
+unchanged chart values changes nothing helmfile can see: no rollout, and the connector's
+post-upgrade sync does not run, so the catalogue keeps offering the old governance. Pass a
+digest of what you assembled as `connector.governance.checksum`; it is the pod annotation
+`checksum/governance`, so the change is a rollout and the sync hook publishes it.
+
+### The data plane first, then the connector
+
+The row-filter contract between the connector (the decision point) and the data plane (the
+enforcement point) is strict on both sides (`extra="forbid"`), so a connector that sends a field
+the deployed data plane does not know is refused, not misread. Upgrade the data plane first,
+then the connector, then check the data plane's own doctor row.
 
 ### Rollback
 
@@ -219,26 +242,43 @@ lift the withdrawals among them.
 
 ## Adding a participant
 
-Four edits, all values-only, provided DNS already has a wildcard record:
+Values-only, in the deployment repository, provided DNS already has a wildcard record:
 
-1. **CNPG** — add three databases and three owner roles: `connector_<name>`,
-   `provenance_<name>`, `edc_<name>`.
-2. **`secrets.sops.yaml`** — three Postgres passwords plus a `participants.<name>` block
-   (`edcApiKey`, `edcVault.edrSigningPrivateJwk`, `stsSecret`). Generate the JWK with
-   `task secrets:keygen`.
-3. **`values.yaml`** — append an entry to `participants`.
+1. **CNPG** — four databases and owner roles: `identity_registry_<name>`, `connector_<name>`,
+   `provenance_<name>`, `edc_<name>` (`-` in the name becomes `_`).
+2. **The secrets file** — four Postgres passwords plus a `participants.<name>` block: every key
+   `helm/secrets.example.yaml` shows for one participant, including the EDR key pair
+   (`edcVault.edrSigningPrivateJwk` and its public half `edrSigningPublicJwk`, from
+   `task secrets:keygen`). `connectorClientSecret` is the same `svc-edc` secret every
+   participant has; every other key is this participant's own.
+3. **The values file** — append an entry to `participants`.
 4. **DNS/TLS** — `<name>.<baseDomain>` must resolve to the ingress controller. A wildcard record
    and wildcard certificate make this a no-op.
 
 ```bash
-sops secrets.sops.yaml          # edit in place, stays encrypted
-helmfile -e production diff
-helmfile -e production apply
+helmfile -e staging diff
+helmfile -e staging apply
 ```
 
-The new participant's namespace, labels, releases and DID all derive from the entry. **Register
-it in the identity registry through the onboarding path** — the charts create the workloads, not
-the dataspace membership.
+The new participant's namespace, labels, releases and DID all derive from the entry.
+
+### Enrolment — an operator step
+
+The participant registry generates its own key and publishes its DID document at every start,
+but **does not enrol itself**: enrolment spends a single-use code, and a code in a Deployment
+would be replayed at every restart. So it is two commands, run once by an operator:
+
+```bash
+# 1. at the anchor: mint a code for the organisation's owner alias
+kubectl -n <authority namespace> exec deploy/ds-identity-registry -- \
+  ir-cli org enrolment-token --alias <owner alias> --label "<who it went to>"
+# 2. in the participant's own registry pod: spend it, unless already enrolled
+kubectl -n <participant namespace> exec deploy/ds-identity-registry-<name> -- \
+  sh -c 'ir-cli participant status --quiet || ir-cli participant init --code "<code>"'
+```
+
+The anchor verifies the enrolment by fetching the participant's DID document over did:web, so
+the participant host must already serve it (`helm test ds-edc-<name>`).
 
 ## Removing a participant
 

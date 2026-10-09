@@ -1,0 +1,55 @@
+{{- /*
+`helm test`: the catalogue is what the governance says it is (the local
+doctor's `<p> catalogue` row, plus `local:publish`'s read-back).
+
+Reads `/provider/assets` as this participant's organisation client (it holds
+`connector.provider.read` by default) and compares the number of assets with the
+number of datasets the mounted governance exposes, through the connector's own
+`load_exposed_datasets` — the function the sync publishes from. Empty fails; so
+does a leftover asset the governance no longer names (more) and a dataset the
+sync refused (fewer). It compares counts, not ids: an id swap of equal size
+passes, and the sync Job's own `errors` check covers that.
+*/}}
+{{- $provider := has .Values.participant.role (list "provider" "both") }}
+{{- if and .Values.tests.enabled $provider .Values.governance.configMap }}
+{{- $script := `
+import os, sys
+import httpx
+from connector.services.governance import load_exposed_datasets
+
+verify = os.environ["TEST_TLS_VERIFY"] == "true"
+token = httpx.post(
+    os.environ["CONNECTOR_KEYCLOAK_TOKEN_URL"],
+    data={
+        "grant_type": "client_credentials",
+        "client_id": os.environ["CONNECTOR_CLIENT_ID"],
+        "client_secret": os.environ["CONNECTOR_CLIENT_SECRET"],
+    },
+    timeout=30,
+    verify=verify,
+)
+token.raise_for_status()
+r = httpx.get(
+    os.environ["TEST_CONNECTOR_URL"] + "/provider/assets",
+    headers={"Authorization": "Bearer " + token.json()["access_token"]},
+    timeout=60,
+)
+if r.status_code != 200:
+    sys.exit(f"GET /provider/assets answered {r.status_code}: {r.text[:300]}")
+assets = r.json()
+expected = load_exposed_datasets(
+    os.environ["CONNECTOR_GOVERNANCE_YAML_PATH"],
+    overlay_name=os.environ.get("CONNECTOR_GOVERNANCE_OVERLAY_NAME") or None,
+)
+print(f"catalogue: {len(assets)} asset(s); governance exposes {len(expected)}")
+if not assets:
+    sys.exit("the catalogue is empty — governance is mounted and nothing is published")
+if len(assets) != len(expected):
+    sys.exit("the catalogue does not match the governance: a leftover asset, or a dataset the sync refused")
+` }}
+{{- $env := include "conn.env" . | fromYamlArray }}
+{{- $env = append $env (dict "name" "TEST_CONNECTOR_URL" "value" (printf "http://%s:%v" (include "ds.fullname" .) .Values.service.port)) }}
+{{ include "ds.testPod" (dict "ctx" . "name" "catalogue" "script" $script "env" $env
+     "volumes" (list (dict "name" "governance" "configMap" (dict "name" .Values.governance.configMap)) (dict "name" "tmp" "emptyDir" (dict)))
+     "volumeMounts" (list (dict "name" "governance" "mountPath" .Values.governance.mountPath "readOnly" true) (dict "name" "tmp" "mountPath" "/tmp"))) }}
+{{- end }}

@@ -17,8 +17,12 @@ ds-<service>-<participant>.
   value: {{ printf "http://ds-connector-%s:30001" $p | quote }}
 - name: PROVENANCE_URL
   value: {{ printf "http://ds-provenance-%s:30000" $p | quote }}
+{{- if .Values.federatedCatalog.enabled }}
+# Only where this participant runs a federated catalogue (row 16). Unset, the
+# portal falls back to CATALOGUE_URL; set, it must name a Service that exists.
 - name: FEDERATED_CATALOG_URL
   value: {{ printf "http://ds-federated-catalog-%s:30003" $p | quote }}
+{{- end }}
 - name: IDENTITY_REGISTRY_URL
   value: {{ printf "http://ds-identity-registry.%s.svc.cluster.local:30005" ((.Values.global).namespaces).authority | quote }}
 # This participant's own registry, in its own namespace: the credentials of the

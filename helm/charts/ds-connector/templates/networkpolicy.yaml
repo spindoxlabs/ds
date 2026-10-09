@@ -15,6 +15,42 @@
     (dict "namespace" .Release.Namespace "name" "ds-edc")
     (dict "namespace" .Release.Namespace "name" (include "ds.name" .)))) }}
 ---
+{{- with .Values.networkPolicy.ingressFrom }}
+# Callers outside this namespace, named one by one (row 8): the host platform's
+# consent writer and data plane. Exactly the namespace given, and with
+# `podLabels` exactly those pods, on the service port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" $ }}-from-callers
+  labels:
+    {{- include "ds.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" $ | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+{{- range $i, $peer := . }}
+{{- if not $peer.namespace }}
+{{- fail (printf "networkPolicy.ingressFrom[%d] has no namespace — an empty namespaceSelector admits every namespace in the cluster" $i) }}
+{{- end }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $peer.namespace | quote }}
+          {{- with $peer.podLabels }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+{{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.service.port }}
+---
+{{- end }}
 {{- if ((.Values.global).monitoring).serviceMonitor }}
 # /metrics is unauthenticated by decision (docs/rulebook/provenance-and-logging.md
 # step 1) — Prometheus only, never ingress.

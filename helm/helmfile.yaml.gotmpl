@@ -2,8 +2,19 @@
 # Dataspace deployment — release composition
 # ==============================================================================
 #
-#   helmfile -e production diff
-#   helmfile -e production apply
+# **A base, not a deployment.** A deployment drives this file from its own
+# repository, with its own helmfile, values and sops-encrypted secrets
+# (`every-secret-has-one-source`, M1): ds is public, so a real deployment's
+# ciphertext never sits in this tree. See helm/README.md, "Deploying from your
+# own repository":
+#
+#   helmfiles:
+#     - path: <ds checkout>/helm/helmfile.yaml.gotmpl
+#       values:
+#         - <the parent's .Values, rendered with toYaml>  # values + decrypted secrets
+#
+# The parent's environment must be one this file declares (`staging` or
+# `production`): helmfile skips a sub-helmfile in any other, silently.
 #
 # Release groups, in dependency order:
 #   ds-namespaces        — labeled namespaces (participant label drives NetPols)
@@ -13,11 +24,28 @@
 # Release NAMES follow ds-<service>-<participant> so a chart can address a
 # sibling's Service from the participant name alone (see ds-connector/_env.tpl).
 #
-# Configuration: values.yaml (operator-edited) + secrets.sops.yaml (encrypted).
+# Configuration: values.yaml here is the base; the deployment's values and its
+# secrets are merged over it. The secret policy below runs on the merged result.
 # ==============================================================================
 
 environments:
+  # ── The environments a deployment drives ────────────────────────────────────
+  #
+  # A helmfile renders a sub-helmfile only in an environment the sub-helmfile
+  # declares, so these names are the ones a deployment's own helmfile may use.
+  # Each reads only the committed base values. `secrets.sops.yaml` beside this
+  # file is optional (`missingFileHandler: Warn`): an operator who still keeps
+  # one here gets it read, and a deployment passing its secrets down needs none.
+  # Nothing is optional *in effect* — the secret policy below fails the render,
+  # naming the key, when a secret the enabled participants need is missing.
   production:
+    missingFileHandler: Warn
+    values:
+      - values.yaml
+    secrets:
+      - secrets.sops.yaml
+  staging:
+    missingFileHandler: Warn
     values:
       - values.yaml
     secrets:
@@ -27,30 +55,27 @@ environments:
   #
   #   helmfile -e example template
   #
-  # Identical to `production` except that the secrets come from the **committed
-  # example** as plain values instead of from a SOPS file nobody but the
-  # operator has. It deploys nothing — every value in it is `CHANGE_ME` — and
-  # exists so the release composition can be rendered by anyone, in CI, with no
-  # key.
+  # Identical to the others except that the secrets come from the **committed
+  # example** as plain values. It deploys nothing — every value in it is
+  # `CHANGE_ME` — and exists so the release composition can be rendered by
+  # anyone, with no key. It is the one environment the placeholder and custody
+  # checks of the secret policy do not run in.
   #
-  # **This is not a convenience.** `production` reads `secrets.sops.yaml`, which
-  # is gitignored, so before this existed `helmfile template` could not run in a
-  # clean checkout at all — and the chart set went unrendered long enough to
-  # accumulate a page of defects that a single render names. The one that proves
-  # the point: `ds-provenance` `required`d a `trustAnchorPublicJwk` the helmfile
-  # passed only to `ds-connector`, so **every production deploy would have failed
-  # at that release**, and nothing said so until someone rendered it by hand.
+  # **This is not a convenience.** Before it existed `helmfile template` could
+  # not run in a clean checkout at all — and the chart set went unrendered long
+  # enough to accumulate a page of defects that a single render names. The one
+  # that proves the point: `ds-provenance` `required`d a `trustAnchorPublicJwk`
+  # the helmfile passed only to `ds-connector`, so **every production deploy
+  # would have failed at that release**, and nothing said so until someone
+  # rendered it by hand.
   #
   # A `required` that is never exercised is not a guard, it is a comment. Keep
   # this environment rendering.
   example:
     values:
       - values.yaml
+      - values.example.yaml
       - secrets.example.yaml
-
-  # staging:
-  #   values: [values.yaml, environments/staging.yaml]
-  #   secrets: [secrets.sops.yaml]
 
 ---
 
@@ -71,6 +96,162 @@ environments:
 {{- $global := .Values.global }}
 {{- with env "DS_IMAGE_TAG" }}
 {{- $global = merge (dict "image" (dict "tag" .)) $global }}
+{{- end }}
+
+
+{{- /*
+================================================================================
+The secret policy (`every-secret-has-one-source`, M2)
+
+Runs on the merged values — ds's base, the deployment's overrides and its
+decrypted secrets — before any release renders, because only here is every value
+in view at once; no single pod sees two releases' keys. Each refusal names the
+key path and never the value.
+
+  presence    every enabled participant has its secrets entry (else a nil
+              pointer deep inside a release names nothing useful)
+  R2          no placeholder or dev literal in any secret      — not in `example`
+  R3          no custody key shared: the anchor's and every participant's
+              encryption key, every two participants' encryption and control
+              keys                                              — not in `example`
+  svc-edc     every EDC logs in as the one realm client `svc-edc`, so every
+              participant's `connectorClientSecret` (and `svcEdcSecret`) is the
+              SAME value — the opposite of a custody key
+  org client  posture A: org-sync's `organisationClients.<alias>.connectorSecret`
+              equals the connector's `organisationClientSecret`
+  R4          no EDR signing key from the committed dev fixtures
+  EDR halves  `edcVault.edrSigningPublicJwk` is `edrSigningPrivateJwk` without
+              its private member — chart parity OQ1 (b): two halves an operator
+              supplies, checked to agree; and the connector's half holds no `d`
+  anchor      a literal `trustAnchorDomain` equals the host every participant
+              derives (`<hosts.trustAnchor>.<baseDomain>`), or the anchor names
+              itself under a DID nobody trusts (OQ5)
+
+Not decided here, so not enforced: whether the connector's at-rest keys and the
+provenance pseudonym key must differ per participant (a maintainer question,
+recorded in the deployment's D2 work log). They are covered by R2.
+================================================================================
+*/}}
+{{- $armed := ne .Environment.Name "example" }}
+{{- $sec := .Values | get "secrets" dict }}
+{{- $psecAll := $sec | get "participants" dict }}
+{{- $enabled := list }}
+{{- range .Values.participants }}{{ if .enabled }}{{ $enabled = append $enabled . }}{{ end }}{{ end }}
+
+{{- /* presence */}}
+{{- range $enabled }}
+{{- if not (hasKey $psecAll .name) }}
+{{- fail (printf "secret policy: secrets.participants.%s is missing — participant %q is enabled, and its secrets come from the deployment's secrets file (passed down with the values)" .name .name) }}
+{{- end }}
+{{- end }}
+
+{{- /* R2 — placeholders and dev literals, any spelling, at any depth (≤ 5) */}}
+{{- $weak := list "changeme" "admin" "password" "postgres" "secret" "test" }}
+{{- $devLiterals := list "insecure-dev-secret" "insecure-dev-callback-key" "insecure-dev-control-key" "insecure-dev-key" "dev-encryption-key-change-in-production" }}
+{{- if $armed }}
+{{- $leaves := dict }}
+{{- range $k1, $v1 := $sec }}
+{{- if kindIs "map" $v1 }}{{ range $k2, $v2 := $v1 }}
+{{- if kindIs "map" $v2 }}{{ range $k3, $v3 := $v2 }}
+{{- if kindIs "map" $v3 }}{{ range $k4, $v4 := $v3 }}
+{{- if kindIs "map" $v4 }}{{ range $k5, $v5 := $v4 }}{{ $_ := set $leaves (printf "secrets.%s.%s.%s.%s.%s" $k1 $k2 $k3 $k4 $k5) $v5 }}{{ end }}
+{{- else }}{{ $_ := set $leaves (printf "secrets.%s.%s.%s.%s" $k1 $k2 $k3 $k4) $v4 }}{{ end }}
+{{- end }}
+{{- else }}{{ $_ := set $leaves (printf "secrets.%s.%s.%s" $k1 $k2 $k3) $v3 }}{{ end }}
+{{- end }}
+{{- else }}{{ $_ := set $leaves (printf "secrets.%s.%s" $k1 $k2) $v2 }}{{ end }}
+{{- end }}
+{{- else }}{{ $_ := set $leaves (printf "secrets.%s" $k1) $v1 }}{{ end }}
+{{- end }}
+{{- range $path, $value := $leaves }}
+{{- $text := toString $value | trim }}
+{{- $form := $text | lower | replace "_" "" | replace "-" "" }}
+{{- if and $text (or (has $form $weak) (contains "changeme" $form) (has $text $devLiterals) (hasPrefix "dev-" ($text | lower))) }}
+{{- fail (printf "secret policy: %s is a placeholder or a dev default — generate a real value (helm/secrets.example.yaml says how). Only the `example` environment renders placeholders." $path) }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- /* R3 — no custody key shared */}}
+{{- if $armed }}
+{{- $anchorKey := $sec | get "identityRegistryEncryptionKey" "" }}
+{{- range $i, $a := $enabled }}
+{{- $pa := index $psecAll $a.name }}
+{{- if and $anchorKey (eq ($pa | get "identityRegistryEncryptionKey" "") $anchorKey) }}
+{{- fail (printf "secret policy: secrets.participants.%s.identityRegistryEncryptionKey equals the anchor's secrets.identityRegistryEncryptionKey — one key per release (D-47), or every DID private key is back in one place" $a.name) }}
+{{- end }}
+{{- range $j, $b := $enabled }}
+{{- if lt $i $j }}
+{{- $pb := index $psecAll $b.name }}
+{{- range $key := list "identityRegistryEncryptionKey" "edcControlApiKey" }}
+{{- $va := $pa | get $key "" }}
+{{- if and $va (eq $va ($pb | get $key "")) }}
+{{- fail (printf "secret policy: secrets.participants.%s.%s equals secrets.participants.%s.%s — a custody key is per participant, never shared" $a.name $key $b.name $key) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- /* svc-edc — one realm client, one secret */}}
+{{- $svcEdc := $sec | get "svcEdcSecret" "" }}
+{{- range $enabled }}
+{{- $v := index $psecAll .name | get "connectorClientSecret" "" }}
+{{- if and $svcEdc $v (ne $v $svcEdc) }}
+{{- fail (printf "secret policy: secrets.participants.%s.connectorClientSecret differs from secrets.svcEdcSecret — every EDC logs in as the one realm client svc-edc, so the values must be equal" .name) }}
+{{- end }}
+{{- if $v }}{{ $svcEdc = $v }}{{ end }}
+{{- end }}
+
+{{- /* org client — posture A's second copy of the connector's secret */}}
+{{- if .Values.global.keycloak.sync.enabled }}
+{{- range $alias, $client := ($sec | get "organisationClients" dict) }}
+{{- range $enabled }}
+{{- $clientId := dig "connector" "clientId" "" . }}
+{{- if or (eq $clientId (printf "svc-ds-connector-%s" $alias)) (and (not $clientId) (eq .name $alias)) }}
+{{- $mine := index $psecAll .name | get "organisationClientSecret" "" }}
+{{- if ne ($client | get "connectorSecret" "") $mine }}
+{{- fail (printf "secret policy: secrets.organisationClients.%s.connectorSecret differs from secrets.participants.%s.organisationClientSecret — org-sync would create the client with one and the connector log in with the other" $alias .name) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- /* R4 and the EDR halves. The x coordinates of services/connector/config/*-vault.properties'
+       keys, which are public; a render test checks this list against the fixtures. */}}
+{{- $devEdrKeyX := list "K-yAEzC24eWqvsZ8fgNIhOszsM0pRNcKwr8AkEp8x5M" "VRSMmFb0n5vlOQsElSmUsdbRfS-7d3_lV2UfFKcsYfA" "aG5tWWbDs57eXTu9DSBFUepQnw7XV8xuwjOQW5z3WK8" }}
+{{- range $enabled }}
+{{- $pp := . }}
+{{- $vault := index $psecAll .name | get "edcVault" dict }}
+{{- $private := fromYaml (toString ($vault | get "edrSigningPrivateJwk" "{}")) | default dict }}
+{{- if has ($private | get "x" "") $devEdrKeyX }}
+{{- fail (printf "secret policy: secrets.participants.%s.edcVault.edrSigningPrivateJwk is a committed dev fixture key — its private half is public, so every EDR it signs is forgeable. Generate one with task secrets:keygen" .name) }}
+{{- end }}
+{{- $publicRaw := toString ($vault | get "edrSigningPublicJwk" "") | trim }}
+{{- if and (not $publicRaw) (has (.role | default "provider") (list "provider" "both")) }}
+{{- fail (printf "secret policy: secrets.participants.%s.edcVault.edrSigningPublicJwk is required for a provider — the connector serves it at /internal/edr-jwks, where a data plane fetches the key to verify EDRs" .name) }}
+{{- end }}
+{{- if $publicRaw }}
+{{- $public := fromYaml $publicRaw | default dict }}
+{{- if hasKey $public "d" }}
+{{- fail (printf "secret policy: secrets.participants.%s.edcVault.edrSigningPublicJwk carries a private member (d) — the connector must hold no private material; give it the public half only" .name) }}
+{{- end }}
+{{- range $c := list "kty" "crv" "x" "y" }}
+{{- if ne (toString ($public | get $c "")) (toString ($private | get $c "")) }}
+{{- fail (printf "secret policy: secrets.participants.%s.edcVault.edrSigningPublicJwk is not the public half of edrSigningPrivateJwk (%s differs) — the connector would serve a key no EDR was signed with" $pp.name $c) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- /* anchor — one host, however it is spelled */}}
+{{- $derivedAnchor := printf "%s.%s" (.Values.global.hosts.trustAnchor | default "trust-anchor") .Values.global.baseDomain }}
+{{- with .Values.authority.identityRegistry.trustAnchorDomain }}
+{{- if ne . $derivedAnchor }}
+{{- fail (printf "authority.identityRegistry.trustAnchorDomain is %q, but every participant derives the anchor as %q from global.hosts.trustAnchor and global.baseDomain — the anchor would sign as a DID no participant trusts. Leave it empty, or change baseDomain/hosts instead" . $derivedAnchor) }}
+{{- end }}
 {{- end }}
 
 helmDefaults:
@@ -115,17 +296,12 @@ releases:
         connectorUrls: {{ $urls := list }}{{ range .Values.participants }}{{ if .enabled }}{{ $urls = append $urls (printf "http://ds-connector-%s.%s%s.svc.cluster.local:30001" .name $.Values.global.namespaces.participantPrefix .name) }}{{ end }}{{ end }}{{ join "," $urls | quote }}
         credentialService:
           expose: {{ .Values.authority.identityRegistry.credentialService.expose }}
+        # Passed through whole rather than key by key: a forgotten key here is
+        # a flag that silently stops reaching the bootstrap, which is the
+        # `PT-11` shape — a supply path that omits what was added last
+        # (`seedItems` was the next one).
         bootstrap:
-          enabled: {{ .Values.authority.identityRegistry.bootstrap.enabled }}
-          seedConfigMap: {{ .Values.authority.identityRegistry.bootstrap.seedConfigMap | quote }}
-          seedMountPath: {{ .Values.authority.identityRegistry.bootstrap.seedMountPath | quote }}
-          governanceConfigMap: {{ .Values.authority.identityRegistry.bootstrap.governanceConfigMap | quote }}
-          governanceMountPath: {{ .Values.authority.identityRegistry.bootstrap.governanceMountPath | quote }}
-          # Passed through whole rather than key by key: a forgotten key here is
-          # a flag that silently stops reaching the bootstrap, which is the
-          # `PT-11` shape — a supply path that omits what was added last.
-          orgApply:
-            {{- toYaml .Values.authority.identityRegistry.bootstrap.orgApply | nindent 12 }}
+          {{- toYaml .Values.authority.identityRegistry.bootstrap | nindent 10 }}
         keycloak:
           sync:
             enabled: {{ .Values.global.keycloak.sync.enabled }}
@@ -148,6 +324,30 @@ releases:
 {{- $p := . }}
 {{- $ns := printf "%s%s" $root.Values.global.namespaces.participantPrefix $p.name }}
 {{- $psec := index $root.Values.secrets.participants $p.name }}
+{{- /*
+The participant's `connector`, `edc`, `provenance` and `portal` blocks ARE those
+charts' values, forwarded whole (chart parity row 17): a key a chart gains is
+settable from the deployment's values the day it lands, instead of waiting for
+someone to add a line here. What the helmfile owns — the participant's identity,
+`global`, and every secret, which comes from the secrets file — cannot be set
+through them, so a block naming one fails rather than silently competing.
+*/}}
+{{- $blocks := dict }}
+{{- range $block := list "connector" "edc" "provenance" "portal" }}
+{{- $cfg := deepCopy (get $block (dict) $p | default dict) }}
+{{- range $owned := list "secrets" "participant" "global" "existingSecret" }}
+{{- if hasKey $cfg $owned }}
+{{- fail (printf "participants[%s].%s.%s cannot be set here: the helmfile owns it (identity from the participant entry, secrets from the secrets file)" $p.name $block $owned) }}
+{{- end }}
+{{- end }}
+{{- $_ := set $blocks $block (omit $cfg "enabled") }}
+{{- end }}
+{{- /* The pre-forwarding spellings, refused by name so a deployment's old values file fails loudly. */}}
+{{- range $old, $new := dict "notifyBackends" "notify.backends" "webhookAllowedHosts" "notify.webhookAllowedHosts" "governanceOverlayName" "governance.overlayName" "governanceConfigMap" "governance.configMap" }}
+{{- if hasKey $blocks.connector $old }}
+{{- fail (printf "participants[%s].connector.%s was renamed: the block is now the ds-connector chart's values, so write connector.%s" $p.name $old $new) }}
+{{- end }}
+{{- end }}
 
   # ── The participant's own identity registry ────────────────────────────────
   #
@@ -182,9 +382,11 @@ releases:
         keycloak:
           sync:
             enabled: false
+        # No `serviceClientSecret` (chart parity row 28): its one reader is the
+        # anchor's connector notification, and a participant never notifies. It
+        # was fed the `svc-edc` secret under `svc-ds-identity-registry`'s name.
         secrets:
           identityRegistryEncryptionKey: {{ $psec.identityRegistryEncryptionKey | quote }}
-          serviceClientSecret: {{ $psec.connectorClientSecret | quote }}
           dbPassword: {{ index $root.Values.secrets.postgres (printf "identity_registry_%s" (replace "-" "_" $p.name)) | quote }}
           participantStsSecret: {{ $psec.stsSecret | quote }}
 
@@ -205,8 +407,8 @@ releases:
           name: {{ $p.name | quote }}
           role: {{ $p.role | quote }}
           did: {{ $p.did | default "" | quote }}
-        replicaCount: {{ $p.edc.replicaCount | default 1 }}
-        secrets:
+      - {{ $blocks.edc | toYaml | nindent 8 }}
+      - secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "edc_%s" (replace "-" "_" $p.name)) | quote }}
           edcCallbackKey: {{ $psec.edcCallbackKey | quote }}
           edcControlApiKey: {{ $psec.edcControlApiKey | quote }}
@@ -225,8 +427,8 @@ releases:
       - participant:
           name: {{ $p.name | quote }}
           role: {{ $p.role | quote }}
-        replicaCount: {{ $p.provenance.replicaCount | default 1 }}
-        secrets:
+      - {{ $blocks.provenance | toYaml | nindent 8 }}
+      - secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" (replace "-" "_" $p.name)) | quote }}
           subjectPseudonymKey: {{ $psec.provenanceSubjectPseudonymKey | quote }}
           # No `trustAnchorPublicJwk` here since `DID-17`: provenance verifies
@@ -253,18 +455,11 @@ releases:
           name: {{ $p.name | quote }}
           role: {{ $p.role | quote }}
           did: {{ $p.did | default "" | quote }}
-        replicaCount: {{ $p.connector.replicaCount | default 1 }}
-        # `svc-ds-connector-<owner alias>`; "" → the participant name as alias.
-        clientId: {{ dig "connector" "clientId" "" $p | quote }}
-        notify:
-          # "" is none. The default here was the string "null", which
-          # `build_notifier` does not recognise — see the chart's values.yaml.
-          backends: {{ dig "connector" "notifyBackends" "" $p | quote }}
-          webhookAllowedHosts: {{ dig "connector" "webhookAllowedHosts" list $p | toJson }}
-        governance:
-          overlayName: {{ dig "connector" "governanceOverlayName" "" $p | quote }}
-          configMap: {{ dig "connector" "governanceConfigMap" "" $p | quote }}
-        secrets:
+      # governance, sync, networkPolicy.ingressFrom, trustAnchor, notify,
+      # personTokenRequired, podAnnotations, clientId, vocabularies, … — the
+      # chart's values, whole.
+      - {{ $blocks.connector | toYaml | nindent 8 }}
+      - secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "connector_%s" (replace "-" "_" $p.name)) | quote }}
           # The organisation client, not `svc-ds-connector` — that one is an
           # audience only (plan `the-management-api-is-v3-behind-one-key`).
@@ -272,6 +467,13 @@ releases:
           edcCallbackKey: {{ $psec.edcCallbackKey | quote }}
           atRestKeys: {{ $psec.connectorAtRestKeys | quote }}
           keyIndexSecret: {{ $psec.connectorKeyIndexSecret | quote }}
+          # Only with `connector.sync.clientId` (svc-ds-publisher).
+          publisherSecret: {{ $psec | get "publisherSecret" "" | quote }}
+          # The public half of this participant's EDR signing key, which the
+          # connector serves at /internal/edr-jwks (chart parity OQ1 (b)). Kept
+          # next to the private key in the secrets file; the policy above checks
+          # the two agree. The connector holds no private material.
+          edrPublicJwk: {{ $psec | get "edcVault.edrSigningPublicJwk" "" | quote }}
 
 {{- if dig "federatedCatalog" "enabled" false $p }}
   {{- /*
@@ -295,23 +497,27 @@ releases:
   {{- $consumerName := "" }}
   {{- $consumerNs := "" }}
   {{- range $root.Values.participants }}
-    {{- if and .enabled (eq (.role | default "") "consumer") (not $consumerName) }}
+    {{- /* `both` mounts the consumer router too (`settings.is_consumer`). */}}
+    {{- if and .enabled (has (.role | default "") (list "consumer" "both")) (not $consumerName) }}
       {{- $consumerName = printf "ds-connector-%s" .name }}
       {{- $consumerNs = printf "%s%s" $root.Values.global.namespaces.participantPrefix .name }}
     {{- end }}
   {{- end }}
   {{- if not $consumerName }}
-    {{- fail (printf "participant %q enables federatedCatalog, but no enabled participant declares `role: consumer`. The crawl calls POST /consumer/catalog, which only a consumer-role connector mounts — deploying this would produce a catalogue that is permanently empty. Give one participant `role: consumer`, or set participants[].federatedCatalog.connectorServiceName explicitly." $p.name) }}
+    {{- fail (printf "participant %q enables federatedCatalog, but no enabled participant declares `role: consumer` or `role: both`. The crawl calls POST /consumer/catalog, which only a consumer-role connector mounts — deploying this would produce a catalogue that is permanently empty. Give one participant `role: consumer` (or `both`), or set participants[].federatedCatalog.connectorServiceName explicitly." $p.name) }}
   {{- end }}
   - name: ds-federated-catalog-{{ $p.name }}
     namespace: {{ $ns }}
     chart: ./charts/ds-federated-catalog
     needs:
       - {{ $ns }}/ds-connector-{{ $p.name }}
+      {{- if ne $consumerName (printf "ds-connector-%s" $p.name) }}
       # The connector it actually crawls through, which is normally another
       # participant's. Named here so the catalogue is not started against a
-      # connector that does not exist yet.
+      # connector that does not exist yet. Not when it is this participant's
+      # own (`role: both`): naming one release twice panics helmfile's DAG.
       - {{ $consumerNs }}/{{ $consumerName }}
+      {{- end }}
     values:
       - global:
           {{- $global | toYaml | nindent 10 }}
@@ -360,8 +566,12 @@ releases:
       - participant:
           name: {{ $p.name | quote }}
           role: {{ $p.role | quote }}
-        replicaCount: {{ dig "portal" "replicaCount" 1 $p }}
-        secrets:
+        # The portal's federated-catalogue link exists only where that release
+        # does (chart parity row 16).
+        federatedCatalog:
+          enabled: {{ dig "federatedCatalog" "enabled" false $p }}
+      - {{ $blocks.portal | toYaml | nindent 8 }}
+      - secrets:
           portalServiceClientSecret: {{ $root.Values.secrets.svcDsPortalSecret | quote }}
 {{- end }}
 {{- end }}

@@ -41,6 +41,7 @@ DID resolution and the DSP endpoints share it.
 | `/users/*` | the same registry | the DID documents of the people this participant onboarded, `did:web:<participant>:users:<id>` (rulebook `D-22a`) |
 | `/credentials/*`, `/sts/*` | the same registry | its credential service and STS |
 | `/protocol/*` | `ds-edc-<participant>` protocol port | DSP — federation |
+| `/.well-known/dspace-version` | the same port, rewritten to `/protocol/.well-known/dspace-version` | DSP 2025-1 version discovery at the RFC 8615 location (a SHOULD). An EDC counterparty finds it under `/protocol` anyway; this is the root a non-EDC one looks at |
 
 Everything else on this host 404s. There is no `/public` route: consumer-pull traffic never
 crosses this host, the EDR names the dataset API directly.
@@ -139,7 +140,7 @@ Every broad-CIDR egress rule carries that metadata exclusion: a pod that can rea
 |---|---|---|
 | `ds-identity-registry` | the ingress controller namespace; any namespace labelled as a participant | 443 — Keycloak JWKS, and the admin API when a sync runs |
 | `ds-edc` | the ingress controller → **only** protocol + public; its own `ds-connector` → management, api, control; peer EDCs in participant-labelled namespaces → protocol + public | the authority namespace (STS, presentation queries); its own connector; 443 |
-| `ds-connector` | `ds-portal` and `ds-edc`, same namespace | the authority namespace; its own EDC management and provenance; 443 (Keycloak, the external dataset API) |
+| `ds-connector` | `ds-portal`, `ds-edc` and its own sync Job, same namespace; **plus each `networkPolicy.ingressFrom` entry** (below) | the authority namespace; its own EDC management and provenance; 443 (Keycloak, the external dataset API) |
 | `ds-provenance` | `ds-connector`, same namespace | 443 (Keycloak JWKS) |
 | `ds-federated-catalog` | `ds-portal`, same namespace | its own connector; the authority namespace; 443 |
 | `ds-portal` | the ingress controller namespace | the connector, provenance and catalogue in its namespace; the authority namespace; 443 |
@@ -165,6 +166,34 @@ networkPolicy:
 
 Prefer a namespace or pod selector over a CIDR where the peer is in-cluster. Any broad-CIDR rule
 should exclude `169.254.169.254/32`, as the chart-supplied ones do.
+
+### Who else may call a connector
+
+The connector is never exposed, but two of its callers are not ds's: the host platform's
+**consent writer** (the onboarding service, which registers a member's consent at its own
+organisation's connector and, as a collector, at the holder's) and the **data plane** (the
+dataset API, which calls `/internal/dataplane/authorize`, `/internal/edr-jwks` and
+`/internal/audit/query`). They run in the host platform's own namespace, which the default
+policy does not admit. `connector.networkPolicy.ingressFrom` names them, per participant:
+
+```yaml
+participants:
+  - name: example-dso
+    connector:
+      networkPolicy:
+        ingressFrom:
+          - namespace: host-platform
+            podLabels: {app.kubernetes.io/name: onboarding}
+          - namespace: host-platform
+            podLabels: {app.kubernetes.io/name: dataset-api}
+```
+
+Each entry admits exactly that namespace — and with `podLabels`, exactly those pods — on the
+connector's service port, as one `ds-connector-<p>-from-callers` policy. `namespace` is
+required: an entry without one would render an empty selector, which admits every namespace,
+so the render fails instead. This covers callers **in the same cluster**. A holder whose
+connector runs in another organisation's infrastructure is a change to the exposure model
+(chart parity OQ2: which paths, behind what boundary) and is not expressed by any chart yet.
 
 Two extra policies are conditional:
 

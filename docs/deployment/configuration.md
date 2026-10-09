@@ -134,11 +134,12 @@ Treat that as containment, not authentication.
 |---|---|---|
 | `authority.enabled` | `true` | gates the whole release |
 | `authority.identityRegistry.replicaCount` | `1` | migrations run as an init container; see [Replicas and migrations](#replicas-and-migrations) |
-| `authority.identityRegistry.trustAnchorDomain` | `trust-anchor.ds.example.org` | must match `hosts.trustAnchor` + `baseDomain` |
+| `authority.identityRegistry.trustAnchorDomain` | `""` → `<hosts.trustAnchor>.<baseDomain>` | every participant derives the anchor's DID, trust list and status URL from `hosts.trustAnchor` + `baseDomain`; a literal here that differs **fails the render**, since the anchor would sign as a DID nobody trusts |
 | `authority.identityRegistry.credentialService.expose` | `false` | publish the DCP presentation-query endpoint; in the EDC flow the holder self-presents, so remote verifiers normally never call it |
 | `authority.identityRegistry.bootstrap.enabled` | `true` | run the bootstrap and seed import as an init container |
 | `authority.identityRegistry.bootstrap.seedConfigMap` | `""` | a ConfigMap with `agreements.yaml` / `owners.yaml`; empty → the image's baked-in defaults |
 | `authority.identityRegistry.bootstrap.seedMountPath` | `/seed` | |
+| `authority.identityRegistry.bootstrap.seedItems` | `[]` | `{key, path}` pairs: the seed volume's own `items:`. A ConfigMap key cannot contain `/`, so an `agreements.yaml` whose `text:` paths are nested (`content/<doc>-<locale>.md`) is mounted by mapping each key back to its path. Listing items mounts **only** those |
 | `authority.identityRegistry.bootstrap.governanceConfigMap` | `""` | a ConfigMap of governance files for `orgApply.governance`; its keys become flat filenames under the mount |
 | `authority.identityRegistry.bootstrap.governanceMountPath` | `/governance` | |
 | `authority.identityRegistry.bootstrap.orgApply.governance` | `[]` | governance files that choose which organisations to onboard; paths are relative to the mount unless absolute |
@@ -215,27 +216,54 @@ The dataset API takes no key here. It is participant-operated and external, and
 the charts have nothing to tell it: it calls the connector at
 `/internal/dataplane/authorize`, not the other way round, and where a consumer
 is sent for data is the asset's `data_address.base_url` in `governance.yaml`.
+It runs in the host platform's namespace, so the connector must admit it:
+`connector.networkPolicy.ingressFrom`, below.
+
+**`helm/values.yaml` lists no participants.** A deployment lists its own in its own
+values; helmfile merges a list over a list element by element, so a list in the
+base would leak into every deployment. ds's example participants are in
+`helm/values.example.yaml`, read only by `helmfile -e example`.
 
 ### Per-service keys
+
+**A participant's `connector`, `edc`, `provenance` and `portal` blocks are those
+charts' values, forwarded whole** — every key in `helm/charts/<chart>/values.yaml`
+is settable here. `secrets`, `participant`, `global` and `existingSecret` are refused
+in them (secrets come from the secrets file, identity from the participant entry).
+The flat spellings used before (`connector.governanceConfigMap`,
+`.governanceOverlayName`, `.notifyBackends`, `.webhookAllowedHosts`) fail the render
+naming the new key. The ones a deployment sets:
 
 | Key | Default | Notes |
 |---|---|---|
 | `connector.replicaCount` | `1` | |
-| `connector.clientId` | `svc-ds-connector-<name>` | the organisation client this connector authenticates as, to its EDC and to every ds service. Its secret is `participants.<name>.organisationClientSecret` in the secrets file, and must equal what the realm holds ([Secrets](secrets.md)) |
-| `connector.notifyBackends` | — | only `smtp` and `webhook` are real backend names; leave empty for no notifications |
-| `connector.webhookAllowedHosts` | `[]` | SSRF guard. **An empty list rejects every webhook URL** — required if `notifyBackends` includes `webhook` |
-| `connector.governanceOverlayName` | `""` | merges `governance.<name>.yaml` on top of the base file |
-| `connector.governanceConfigMap` | `""` | supply the governance file from a ConfigMap |
-| `provenance.replicaCount` | `1` | |
-| `edc.replicaCount` | `1` | |
-| `federatedCatalog.enabled` | per participant | **Crawling is a consumer-role operation** — a provider-role connector does not mount the route the crawler calls. Enable it on a consumer-role participant, or set `connectorServiceName` explicitly |
+| `connector.clientId` | `svc-ds-connector-<name>` | the organisation client this connector — and its sync Job — authenticates as. Set it when the participant's name differs from the organisation's alias in the realm. Its secret is `participants.<name>.organisationClientSecret` in the secrets file, and must equal what the realm holds ([Secrets](secrets.md)) |
+| `connector.notify.backends` | `""` | only `smtp` and `webhook` are real backend names; empty for no notifications |
+| `connector.notify.webhookAllowedHosts` | `[]` | SSRF guard. **An empty list rejects every webhook URL** — required if `backends` includes `webhook` |
+| `connector.governance.configMap` | `""` | the governance files, from a ConfigMap the deployment builds. Empty → no governance, empty catalogue |
+| `connector.governance.overlayName` | `""` | merges `governance.<name>.yaml` on top of the base file |
+| `connector.governance.odrlProfileFile` | `""` | the deployment's own ODRL profile, a key of that ConfigMap → `CONNECTOR_ODRL_PROFILE_PATH`. Unset, ds's bundled profile is used and **every offer naming a deployment-added purpose stops publishing** |
+| `connector.governance.checksum` | `""` | a digest of what the deployment assembled. Rendered as the pod annotation `checksum/governance`, so a governance change is a rollout and the sync hook re-runs; without it a rebuilt ConfigMap with unchanged values changes nothing |
+| `connector.networkPolicy.ingressFrom` | `[]` | `{namespace, podLabels}` entries admitted to the connector's port — the host platform's consent writer and data plane. `namespace` is required; with `podLabels`, only those pods. See [Exposure](exposure.md) |
+| `connector.sync.clientId` | `""` | publish as a separate client (`svc-ds-publisher`); its secret is `participants.<name>.publisherSecret` |
+| `connector.personTokenRequired`, `connector.trustAnchor.*`, `connector.podAnnotations` | | as in the chart; see below |
+| `provenance.replicaCount` | `1` | `provenance.personTokenRequired` and `.trustAnchor.*` as for the connector |
+| `edc.replicaCount` | `1` | `edc.managementAudience`, `edc.edrPublicBaseUrl` likewise |
+| `federatedCatalog.enabled` | per participant | **Crawling is a consumer-role operation** — a provider-role connector does not mount the route the crawler calls. Enable it where a participant of role `consumer` or `both` exists (the crawl uses the first such connector), or set `connectorServiceName` explicitly |
 | `federatedCatalog.crawlInterval` | `300` | seconds |
 | `portal.enabled` | per participant | the portal is deployed alongside exactly one participant, and brings `ds-oauth2-proxy` with it |
 | `portal.replicaCount` | `1` | |
+| `portal.datasetApi.url` | `""` | the catalogue page's source when the participant runs no federated catalogue (`CATALOGUE_URL`) |
+| `portal.consumer.*` | `""` | `defaultAssigner`, `defaultCounterPartyAddress`: the provider the portal's consumer flow defaults to |
+
+The portal names its federated catalogue (`FEDERATED_CATALOG_URL`) only when
+`federatedCatalog.enabled` is true for the same participant; otherwise it falls back
+to `portal.datasetApi.url`.
 
 ## Chart-level keys worth knowing
 
-Not in `helm/values.yaml`. Settable per release by editing `helm/charts/<chart>/values.yaml`.
+Not in `helm/values.yaml`. Settable for a participant's releases through its forwarded
+blocks (above); the anchor's through `authority.identityRegistry`.
 
 | Key | Chart | Default | Notes |
 |---|---|---|---|

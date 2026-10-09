@@ -1,6 +1,11 @@
 {{/* Volume mounts shared by the connector's init and main containers. */}}
 {{- define "conn.volumeMounts" -}}
 {{- include "ds.tmpVolumeMount" . }}
+{{- if include "conn.servesEdrKey" . }}
+- name: edr-verification
+  mountPath: {{ .Values.edr.mountPath }}
+  readOnly: true
+{{- end }}
 {{- if .Values.governance.configMap }}
 - name: governance
   mountPath: {{ .Values.governance.mountPath }}

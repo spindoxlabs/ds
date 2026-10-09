@@ -1,0 +1,27 @@
+{{- /*
+`helm test` on a participant release: its registry answers in-cluster and holds
+this participant's DID document, with the participant's DID as its `id` — the
+address the participant host's Ingress forwards `/.well-known/did.json` to.
+*/}}
+{{- if and .Values.tests.enabled (eq (include "ir.role" .) "participant") }}
+{{- $script := `
+import os, sys
+import httpx
+
+base = os.environ["TEST_REGISTRY_URL"]
+health = httpx.get(base + "/health", timeout=15)
+if health.status_code != 200:
+    sys.exit(f"/health answered {health.status_code}")
+did = os.environ["EXPECT_DID"]
+doc = httpx.get(f"{base}/dids/{did}/did.json", timeout=15)
+if doc.status_code != 200:
+    sys.exit(f"the registry holds no DID document for {did}: {doc.status_code}")
+if doc.json().get("id") != did:
+    sys.exit(f"the registry's DID document names {doc.json().get('id')!r}, not {did!r}")
+print(f"registry answers; DID document id = {did}")
+` }}
+{{- $env := list
+    (dict "name" "TEST_REGISTRY_URL" "value" (printf "http://%s:%v" (include "ds.fullname" .) .Values.service.port))
+    (dict "name" "EXPECT_DID" "value" (.Values.participant.did | default (printf "did:web:%s" (include "ir.host" .)))) }}
+{{ include "ds.testPod" (dict "ctx" . "name" "registry" "script" $script "env" $env) }}
+{{- end }}

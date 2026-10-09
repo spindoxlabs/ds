@@ -1,0 +1,22 @@
+{{- /*
+`helm test`: the portal's public carve-out and its auth wall, through the
+Ingress, with no session — `/join` is 200, `/` is not.
+*/}}
+{{- if and .Values.tests.enabled .Values.ingress.enabled }}
+{{- $script := `
+import os, sys
+import httpx
+
+base = os.environ["PORTAL_URL"]
+verify = os.environ["TEST_TLS_VERIFY"] == "true"
+join = httpx.get(base + "/join", timeout=20, verify=verify, follow_redirects=False)
+if join.status_code != 200:
+    sys.exit(f"/join answered {join.status_code} with no session — the public carve-out is broken")
+root = httpx.get(base + "/", timeout=20, verify=verify, follow_redirects=False)
+if root.status_code == 200:
+    sys.exit("/ answered 200 with no session — the auth wall is not in front of the portal")
+print(f"/join 200 anonymous; / {root.status_code} without a session")
+` }}
+{{- $env := list (dict "name" "PORTAL_URL" "value" (include "portal.origin" .)) }}
+{{ include "ds.testPod" (dict "ctx" . "name" "public-paths" "script" $script "env" $env) }}
+{{- end }}

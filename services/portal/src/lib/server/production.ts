@@ -49,6 +49,22 @@ export const UNIVERSAL_WEAK_VALUES: ReadonlySet<string> = new Set([
 	'test',
 ]);
 
+/**
+ * The form a value is compared to `UNIVERSAL_WEAK_VALUES` in — as
+ * `ds_auth.production.weak_form`: case, surrounding space, `_` and `-` ignored,
+ * so `CHANGE_ME`, the placeholder every example secret ships with, is caught.
+ */
+export function weakForm(value: unknown): string {
+	return String(value).trim().toLowerCase().replace(/[_-]/g, '');
+}
+
+const WEAK_FORMS: ReadonlySet<string> = new Set([...UNIVERSAL_WEAK_VALUES].map(weakForm));
+
+/** True for a universal weak value in any spelling. */
+export function isWeak(value: unknown): boolean {
+	return WEAK_FORMS.has(weakForm(value));
+}
+
 /** Trim + lowercase; unset and empty both read as `production`. */
 export function normaliseEnv(value: string | undefined | null): string {
 	const text = (value ?? '').trim().toLowerCase();
@@ -115,7 +131,7 @@ export class ProductionGuard {
 		const text = String(value).trim();
 		if (text && [...insecureDefaults].includes(text)) {
 			this.add(setting, `is still the development default (${text})`, remediation);
-		} else if (UNIVERSAL_WEAK_VALUES.has(text.toLowerCase())) {
+		} else if (isWeak(text)) {
 			this.add(setting, 'is set to a trivially weak value', remediation);
 		}
 	}
@@ -138,6 +154,8 @@ export class ProductionGuard {
 		const value = String(secret ?? '').trim();
 		if (id && value && id === value) {
 			this.add(setting, `equals the client id (${id})`, remediation);
+		} else if (value && isWeak(value)) {
+			this.add(setting, 'is a placeholder or trivially weak value', remediation);
 		}
 	}
 

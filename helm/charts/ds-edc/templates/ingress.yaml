@@ -143,4 +143,35 @@ spec:
                 name: {{ $fullname }}
                 port:
                   number: {{ .Values.ports.protocol }}
+---
+# ── DSP version discovery at the host root ───────────────────────────────────
+# DSP 2025-1 (`common.protocol.md`) says the version metadata SHOULD be at the
+# RFC 8615 location, `/.well-known/dspace-version` on the host. EDC 0.18.0
+# serves it under its protocol context (`DspVersionApiController`,
+# `@Path("/.well-known/dspace-version")` on `web.http.protocol.path`), so an EDC
+# counterparty finds it under `/protocol` already; this is the root location a
+# non-EDC one looks at. Its own object because `rewrite-target` is per Ingress.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-dspace-version
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" false) | nindent 4 }}
+    nginx.ingress.kubernetes.io/rewrite-target: /protocol/.well-known/dspace-version
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $host)) | nindent 2 }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /.well-known/dspace-version
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ .Values.ports.protocol }}
 {{- end }}
