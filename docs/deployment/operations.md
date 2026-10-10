@@ -231,6 +231,16 @@ What a deployment has to do, in this order:
    `ir-cli collector add --holder-did … --collector-did …` on the trust anchor, or
    `POST /admin/consent-collectors`. The subject must be a member of the *writing*
    organisation.
+
+   **Revoking and reinstating a collector.** `ir-cli collector revoke --holder-did …
+   --collector-did … --reason "…" [--by <who>]` stops the collector writing; the consents it
+   already registered stay. The revocation **survives** the anchor's bootstrap: a seed that runs
+   `collector add` on every start (the charts' `bootstrap.sh`) leaves a revoked pair revoked
+   and logs `Consent collector revoked, left unchanged: … (revoked by … at …: …)`. So a
+   revocation needs no edit to the seed, and removing the pair from the seed revokes nothing.
+   To put it back in force: `ir-cli collector reinstate --holder-did … --collector-did …
+   --reason "…" [--by <who>]` (or `POST /admin/consent-collectors/reinstate`), which checks the
+   add's preconditions again and records who, when and why on the row.
 4. **Drop the old grant.** `connector.consent.provision` is no longer useful on a plain service
    client (`svc-ds-onboarding` in `services/keycloak/clients.yaml` no longer carries it), and it
    is no longer in the `ds-participant-admin` bundle, so a participant operator's console cannot

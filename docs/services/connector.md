@@ -521,8 +521,22 @@ listing for this. If identity-registry cannot be reached and nothing is cached, 
 fails closed.
 
 EDC's own matcher decides, so `management-api:write` also satisfies
-`management-api:negotiations:write`. A token naming another participant's context gets `403`,
-whatever scopes it holds.
+`management-api:negotiations:write`, and `write` satisfies `read`. A token naming another
+participant's context gets `403`, whatever scopes it holds.
+
+The organisation client may ask for `management-api:negotiations:read` on its own
+(`ds_auth.ORGANISATION_READ_SCOPES`, optional on `svc-ds-connector-<alias>`), so a job that only
+lists its requests holds no power to negotiate:
+
+```bash
+curl -s -d grant_type=client_credentials -d client_id=svc-ds-connector-<alias> \
+  -d client_secret=… -d scope=management-api:negotiations:read <issuer>/protocol/openid-connect/token
+curl -s -H "Authorization: Bearer $TOKEN" https://<connector>/consumer/requests
+```
+
+A repeated `POST /consumer/negotiate` for an asset already requested answers `409` naming every
+id under its own name: `request_id` (what `POST /consumer/requests/{request_id}/revoke` takes),
+`negotiation_id`, and `transfer_id` when an active transfer is what blocks it.
 
 The organisation's requests are recorded under the actor `org:<context>`, apart from any
 person's. Provenance records the client that acted (`acted_by.client_id`) and the organisation
@@ -780,6 +794,7 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 | `CONNECTOR_TRUST_ANCHOR_DID` | `did:web:trust-anchor.dataspaces.localhost` | issuer of user VCs; **its key is resolved from this DID's document**, not mounted |
 | `CONNECTOR_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
 | `CONNECTOR_DID_WEB_USE_HTTPS` | `true` | resolve did:web over TLS. False only in dev, where Caddy serves :80 |
+| `CONNECTOR_DID_WEB_INTERNAL_HOSTS`, `CONNECTOR_DID_WEB_INTERNAL_NETWORKS` | empty | ADR-0029: did:web documents are fetched from public addresses only outside `DS_ENV=dev`; these admit the dataspace's own host suffixes into listed private networks. Both or neither, refused at load otherwise |
 | `CONNECTOR_VC_INSECURE_DEV` | `true` | skip signature verification entirely. **Refused in production** |
 | `CONNECTOR_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 / Bitstring registers. **`_URL` is required outside dev** (guard, and a 503 at the point of use). It pins the **origin**; the credential names the register and the bit, so one value covers revocation and suspension. The register is read as the anchor's **signed** VC-JWT and verified against the key its DID document publishes; an unsigned register and an unknown entry type are refused. `_PATH` is one local, unsigned register for dev and tests, and answers only for the `statusPurpose` it publishes |
 | `CONNECTOR_CREDENTIAL_STATUS_CACHE_SECONDS` | `900` | how long a verified register is reused, which is the revocation latency (EDC's default) |

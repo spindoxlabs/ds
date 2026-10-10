@@ -15,14 +15,15 @@ secrets and realm files, and drives the same steps with its own overrides (below
 `task`. About 8 CPUs and 24 GB for the profile (`DS_MK_CPUS`, `DS_MK_MEMORY`). The EDC image
 builds from the `ds-edc-base:0.18.0` image `task edc:base` makes.
 
-**A kubeconfig of its own.** Every step writes or reads only `$KUBECONFIG`, refuses the
-default `~/.kube/config`, and refuses any context but the profile's (`ds-minikube`) or an API
+**A kubeconfig of its own.** Every step writes or reads only `$KUBECONFIG`, which defaults to
+`helm/minikube/.minikube.kubeconfig` (gitignored) when unset, refuses the default
+`~/.kube/config`, and refuses any context but the profile's (`ds-minikube`) or an API
 server that is not local. Your machine's default context may be a shared cluster.
 
 ## Install
 
 ```bash
-export KUBECONFIG=$PWD/.minikube.kubeconfig        # any file of its own
+# KUBECONFIG: helm/minikube/.minikube.kubeconfig unless you set another file of its own
 task helm:minikube:build-images                    # once, and after a change to a service
 task helm:minikube:all                             # about 15 minutes; prints each step's time
 task helm:minikube:test                            # helm test, every release
@@ -65,13 +66,15 @@ evidence, runs its red case, and puts back what it changed.
 |---|---|---|
 | `helm-test` | every release's test Pod passes | — (see `t4.1`) |
 | `t2.3` | `org apply` onboards exactly the owners the governance exposes; `owner import` first changes nothing | a governance file exposing nothing is a refusal |
-| `t2.4` | the collector pair from `bootstrap.sh` is active | revoked + empty `bootstrap.sh` + restart: not active |
+| `t2.4` | the collector pair from `bootstrap.sh` is active; after `collector revoke` and an anchor restart (its bootstrap re-adds the pair) it is still revoked, and the bootstrap log says by whom, when and why; `collector reinstate` makes it active | the restart is the red case: before the fix it re-activated the pair |
 | `t4.1` | — | each test Pod fails: DID document of the wrong DID, `/join` behind the wall, catalogue ≠ governance, registry at zero |
 | `t5.1` | every pod Ready, every publishing Job complete | (the guards: `pod-negatives`) |
 | `t5.2` | `/internal/edr-jwks` from the data plane's namespace: `kid` = the signer alias, the configured public half, no private member | vault file unset: 503 |
 | `t5.3` | a consumer transfer yields an EDR, the stand-in verifies it and gets `allow` from `/internal/dataplane/authorize` | no `ingressFrom` policy: the PEP calls time out |
+| `consumer-list` | the consumer's organisation lists its own requests with a token asked for `management-api:negotiations:read` only; a repeated negotiation answers 409 naming a listed `request_id` | a token with no negotiation scope: 403; the read-only token negotiating: 403 |
 | `t5.5` | a governance change with its checksum rolls the connector, re-runs the publishing hook, and the catalogue follows (and shrinks back on revert) | the ConfigMap changed without the checksum: nothing rolls |
 | `allowance` | with the ADR-0029 allowance, enrolment is issued | refused without it, and with the suffix but an address outside the listed `/32` |
+| `allowance-services` | the connector, provenance and the EDC log their ADR-0029 allowance at start; in the connector and provenance pods `ds_auth.did_web` resolves the trust anchor with the allowance | the same fetch without it: refused (`non-public address`); the provider EDC without it: the consumer's flow is refused and the EDC logs the refusal, then restored |
 | `render-negatives` | the secret policy (render) and the preflight refuse: a placeholder, mismatched EDR halves, a shared custody key, `svc-edc` differing, a client secret equal to its id, a committed fixture key | — |
 | `pod-negatives` | every guard refuses its placeholder by name on the cluster (connector, provenance, both registry kinds, portal, EDC configuration and vault seed, a dev vault); a rollout refused by its guard leaves the serving pod's STS working | — |
 | `rotation` | `edcCallbackKey` rotated in one apply rolls the EDC and the connector, and a transfer afterwards still delivers its EDR | — |
@@ -114,8 +117,9 @@ task helm:minikube:delete       # the whole profile
   `minikube docker-env`).
 - **The registries' did:web resolver reads certifi's bundle only** (`trust_env=False`, on
   purpose), so the CA layer appends to it as well as to the system bundle.
-- **`bootstrap.sh`'s collector step defers until both organisations are enrolled**, and re-adds a
-  revoked pair on every anchor restart: a revocation must also leave `bootstrap.sh`.
+- **`bootstrap.sh`'s collector step defers until both organisations are enrolled.** A revoked pair
+  stays revoked across anchor restarts (`collector add` leaves it and says so); lift it with
+  `ir-cli collector reinstate`.
 - **An enrolment token admits `consumer` only by default**; the enrol step passes the roles the
   owners file declares.
 - **The data plane caches the EDR verification key per process**: after an EDR key change,

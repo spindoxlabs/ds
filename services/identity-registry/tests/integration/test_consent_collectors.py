@@ -132,14 +132,30 @@ def test_the_cli_the_admin_api_and_the_check_agree(anchor, holder):
     assert revoked.json()["revocation_reason"] == "integration revoke"
     assert _check(anchor, holder.did, COLLECTOR_DID)["accepted"] is False
 
-    # And back, through the API this time: the same row.
+    # A re-add (what the anchor's bootstrap does on every start) leaves it revoked.
     again = httpx.post(
         f"{anchor.url}/admin/consent-collectors",
         json={"holder_did": holder.did, "collector_did": COLLECTOR_DID},
         headers=write,
         timeout=10,
     )
-    assert again.status_code == 201, again.text
+    assert again.status_code == 200, again.text
+    assert again.json()["status"] == "revoked"
+    assert _check(anchor, holder.did, COLLECTOR_DID)["accepted"] is False
+
+    # And back, explicitly, through the API: the same row.
+    reinstated = httpx.post(
+        f"{anchor.url}/admin/consent-collectors/reinstate",
+        json={
+            "holder_did": holder.did,
+            "collector_did": COLLECTOR_DID,
+            "reason": "integration reinstate",
+        },
+        headers=write,
+        timeout=10,
+    )
+    assert reinstated.status_code == 200, reinstated.text
+    assert reinstated.json()["reinstatement_reason"] == "integration reinstate"
     assert _check(anchor, holder.did, COLLECTOR_DID)["accepted"] is True
 
 

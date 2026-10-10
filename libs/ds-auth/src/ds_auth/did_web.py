@@ -30,6 +30,19 @@ setting rather than a constant.
 
 Sync on purpose: `verify_user_vc_jwt` is sync and called from sync dependency
 functions in two services. An async variant would fork the call graph for no gain.
+
+## Which addresses it dials (ADR-0029, extended)
+
+The DID to resolve is named by the credential, so its host is a counterparty's
+choice. The document is fetched through `ds_auth.address_guard`, the rules the
+identity registry's resolver applies: public addresses only outside `DS_ENV=dev`,
+private and loopback too under dev, link-local / multicast / reserved /
+unspecified never, every resolved address checked at connect time, plus the
+service's optional `InternalAllowance` for the dataspace's own hosts. No redirect
+is followed and no environment proxy is used: each would move the request
+somewhere the check never saw. The trust list (`accredited`) and the status
+register are fetched from URLs the operator configured, not from a DID, and are
+not guarded here.
 """
 
 from __future__ import annotations
@@ -45,15 +58,23 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import unquote
 from urllib.request import Request, urlopen
 
+import httpx
 from cryptography.hazmat.primitives.asymmetric.ec import (
     SECP256R1,
     EllipticCurvePublicNumbers,
 )
 
+from .address_guard import InternalAllowance, guarded_sync_transport
+from .production import is_production
+
 log = logging.getLogger(__name__)
 
 DID_WEB_PREFIX = "did:web:"
 WELL_KNOWN_PATH = ".well-known/did.json"
+
+#: The largest DID document read (the identity registry's bound): a document is
+#: a few kilobytes, and anything near this is memory spent on somebody's behalf.
+MAX_DOCUMENT_BYTES = 256 * 1024
 
 #: How long a resolved document may be reused. Also the worst-case window in
 #: which this service still accepts a key the issuer has rotated away from.
@@ -185,10 +206,15 @@ class DidWebResolver:
         use_https: bool = True,
         timeout_seconds: float = 5.0,
         ttl_seconds: float = DEFAULT_TTL_SECONDS,
+        dev: bool | None = None,
+        allowance: InternalAllowance | None = None,
     ) -> None:
         self._use_https = use_https
         self._timeout = timeout_seconds
         self._ttl = ttl_seconds
+        #: `None` reads the posture (`DS_ENV`) at each fetch.
+        self._dev = dev
+        self.allowance = allowance or InternalAllowance()
         self._cache: dict[str, _Entry] = {}
         self._lock = threading.Lock()
 
@@ -214,12 +240,33 @@ class DidWebResolver:
 
     def _fetch(self, did: str) -> dict[str, Any]:
         url = did_web_url(did, use_https=self._use_https)
+        dev = (not is_production()) if self._dev is None else self._dev
         try:
-            request = Request(url, headers={"Accept": "application/json"})
-            with urlopen(request, timeout=self._timeout) as response:  # noqa: S310
-                document = json.loads(response.read().decode())
-        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            with httpx.Client(
+                timeout=self._timeout,
+                follow_redirects=False,
+                trust_env=False,
+                transport=guarded_sync_transport(dev=dev, allowance=self.allowance),
+            ) as client:
+                with client.stream(
+                    "GET", url, headers={"Accept": "application/json"}
+                ) as response:
+                    if response.status_code != 200:
+                        raise DidResolutionError(
+                            f"{did} resolved to HTTP {response.status_code} at {url}"
+                        )
+                    body = bytearray()
+                    for chunk in response.iter_bytes():
+                        body.extend(chunk)
+                        if len(body) > MAX_DOCUMENT_BYTES:
+                            raise DidResolutionError(
+                                f"document at {url} exceeds the size limit"
+                            )
+            document = json.loads(bytes(body).decode())
+        except httpx.HTTPError as exc:
             raise DidResolutionError(f"{did} is unreachable at {url}: {exc}") from exc
+        except ValueError as exc:
+            raise DidResolutionError(f"{did} did not return JSON at {url}") from exc
 
         if not isinstance(document, dict):
             raise DidResolutionError(f"{did} did not return a DID document at {url}")

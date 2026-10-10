@@ -107,12 +107,17 @@ as a value at all — to make the invariant visible, not to make it negotiable.
 
 ## When the cluster resolves the dataspace's own hosts privately
 
-Under `DS_ENV=production` the identity registries dial only **public** addresses when they
-fetch a did:web document or deliver a credential: the URL comes from a DID somebody else chose.
-If, from inside the cluster, your own `<participant>.<baseDomain>` and
-`trust-anchor.<baseDomain>` resolve to a **private** address, every enrolment is refused with
-`resolves to a non-public address`. List your hosts' suffixes and the networks they resolve to
-(ADR-0029), once, for every registry:
+Under `DS_ENV=production` **every did:web fetch in ds** dials only **public** addresses: the
+URL comes from a DID somebody else chose. That is the identity registries (enrolment,
+presentation verification, credential delivery), the connectors and provenance (the issuer of a
+person's credential, `ds_auth.did_web`) and the EDCs (the counterparty's DID during DCP, ds's
+`DidWebGuardExtension` in place of EDC's resolver). If, from inside the cluster, your own
+`<participant>.<baseDomain>` and `trust-anchor.<baseDomain>` resolve to a **private** address,
+every enrolment is refused with `resolves to a non-public address`, and so is every person
+route and every negotiation. List your hosts' suffixes and the networks they resolve to
+(ADR-0029), once; the helmfile forwards the block to every identity registry and to every
+participant's connector, provenance and EDC (a participant's own `connector.didWeb`,
+`provenance.didWeb` or `edc.didWeb` overrides it for that release):
 
 ```yaml
 authority:
@@ -124,7 +129,8 @@ authority:
 
 Both or neither (the render fails otherwise, and so does the service). Link-local, metadata,
 multicast, reserved and unspecified addresses stay refused, and any other host is unaffected.
-Each registry logs `did:web internal allowance active: …` at start. Three setups:
+Each registry, connector, provenance and EDC logs `did:web internal allowance active: …` at
+start. Three setups:
 
 | Your cluster's DNS | Setting |
 |---|---|

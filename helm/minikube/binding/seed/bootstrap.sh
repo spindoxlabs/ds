@@ -2,6 +2,14 @@
 # holder accepts the community as the collector of the consent its connector holds
 # (ADR-0026; the owners file marks `example-rec` `collects_consent: true`). Idempotent.
 #
+# **A revocation survives this script.** `collector add` never revives a revoked pair: it
+# leaves the row revoked, exits 0 and prints who revoked it, when and why, so this
+# bootstrap keeps running on every anchor start without undoing `ir-cli collector revoke`.
+# Lifting a revocation is an explicit act with a reason, recorded on the row:
+#   kubectl exec -n ds-authority deploy/ds-identity-registry -- ir-cli collector reinstate \
+#     --holder-did <holder> --collector-did <collector> --reason "<why>" [--by <who>]
+# Removing the pair from this file is not a revocation (the row stays as it is).
+#
 # **Deferred until both are enrolled.** `collector add` refuses a DID that is not an
 # active participant, and a participant becomes active only when it spends its enrolment
 # code, which needs this anchor running first. So on the first install this step prints

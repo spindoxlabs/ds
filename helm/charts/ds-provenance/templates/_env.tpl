@@ -44,6 +44,19 @@
   value: {{ .Values.trustAnchor.trustListUrl | default (printf "https://%s.%s/trust" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) | quote }}
 - name: PROVENANCE_DID_WEB_USE_HTTPS
   value: "true"
+{{- $dw := .Values.didWeb | default dict }}
+{{- $dwHosts := $dw.internalHosts | default list }}
+{{- $dwNets := $dw.internalNetworks | default list }}
+{{- if or $dwHosts $dwNets }}
+{{- if not (and $dwHosts $dwNets) }}
+{{- fail "didWeb: set both internalHosts and internalNetworks, or neither (ADR-0029)" }}
+{{- end }}
+{{/* ADR-0029: the dataspace's own hosts may resolve into these private networks. */}}
+- name: PROVENANCE_DID_WEB_INTERNAL_HOSTS
+  value: {{ join "," $dwHosts | quote }}
+- name: PROVENANCE_DID_WEB_INTERNAL_NETWORKS
+  value: {{ join "," $dwNets | quote }}
+{{- end }}
 - name: PROVENANCE_VC_INSECURE_DEV
   value: "false"
 - name: PROVENANCE_CREDENTIAL_STATUS_URL

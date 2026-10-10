@@ -208,6 +208,7 @@ Every edge points backwards in time, so `direction` selects which way the walk f
 | `PROVENANCE_TRUST_ANCHOR_DID` | `did:web:trust-anchor.dataspaces.localhost` | expected issuer; **its key is resolved from this DID's document**, not mounted |
 | `PROVENANCE_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
 | `PROVENANCE_DID_WEB_USE_HTTPS` | `true` | resolve did:web over TLS |
+| `PROVENANCE_DID_WEB_INTERNAL_HOSTS`, `PROVENANCE_DID_WEB_INTERNAL_NETWORKS` | empty | ADR-0029: did:web documents are fetched from public addresses only outside `DS_ENV=dev`; these admit the dataspace's own host suffixes into listed private networks. Both or neither, refused at load otherwise |
 | `PROVENANCE_VC_INSECURE_DEV` | `true` | skip signature verification entirely. **Refused in production** |
 | `PROVENANCE_CREDENTIAL_STATUS_PATH` / `_URL` | — | as the connector's: **`_URL` is required outside dev**, and the register is read signed and verified. `_PATH` is one local, unsigned register for dev and tests |
 | `PROVENANCE_CREDENTIAL_STATUS_CACHE_SECONDS` | `900` | the revocation latency |

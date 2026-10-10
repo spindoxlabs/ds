@@ -396,7 +396,13 @@ class ConsentCollectorResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     revoked_at: datetime | None = None
+    revoked_by: str | None = None
     revocation_reason: str | None = None
+    #: The last explicit reinstatement. A re-add never lifts a revocation; only
+    #: `POST /admin/consent-collectors/reinstate` (`ir-cli collector reinstate`) does.
+    reinstated_at: datetime | None = None
+    reinstated_by: str | None = None
+    reinstatement_reason: str | None = None
 
 
 class ConsentCollectorCheckResponse(BaseModel):

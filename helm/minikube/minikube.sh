@@ -5,7 +5,9 @@
 # and the gates. docs/deployment/local-cluster.md is the procedure; `task helm:minikube:*`
 # runs these steps.
 #
-#   KUBECONFIG=<a kubeconfig of its own> helm/minikube/minikube.sh <step> [args]
+#   helm/minikube/minikube.sh <step> [args]
+#   (KUBECONFIG defaults to helm/minikube/.minikube.kubeconfig, gitignored; set it to use
+#   another file of its own, never ~/.kube/config)
 #
 # Steps (`all` runs them in this order and times each):
 #   cluster        the minikube profile ($DS_MK_PROFILE), written into $KUBECONFIG only
@@ -36,6 +38,10 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+# A fixed file of its own (gitignored), so a lost shell or scratch directory does not lose
+# the cluster's credentials, and a shell without KUBECONFIG never falls back to the
+# machine's default kubeconfig.
+export KUBECONFIG=${KUBECONFIG:-$HERE/.minikube.kubeconfig}
 HELM_DIR=$(cd "$HERE/.." && pwd)
 DS_SRC=$(cd "$HELM_DIR/.." && pwd)
 

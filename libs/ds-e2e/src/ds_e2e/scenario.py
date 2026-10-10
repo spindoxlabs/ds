@@ -43,6 +43,11 @@ log = logging.getLogger(__name__)
 DEFAULT_SCENARIO = "energy-chains"
 
 
+#: The reason `destroy` revokes a collector relation with, and the one `apply` will
+#: reinstate: a revocation with any other reason is somebody else's decision.
+DESTROY_REASON = "ds-e2e scenario destroy"
+
+
 class ScenarioError(RuntimeError):
     """A precondition the scenario cannot provision for itself."""
 
@@ -194,7 +199,40 @@ class ScenarioRunner:
             },
             headers=self.admin,
         )
-        if status in (200, 201):
+        if status in (200, 201) and (payload or {}).get("status") == "revoked":
+            # The registry never revives a revoked pair on a re-add. `destroy`
+            # revokes the relation, so the cycle stays repeatable by reinstating
+            # it explicitly, but only a revocation that is the scenario's own.
+            if (payload or {}).get("revocation_reason") == DESTROY_REASON:
+                status, payload = self.http.raw(
+                    "POST",
+                    f"{self.ir}/admin/consent-collectors/reinstate",
+                    body={
+                        "holder_did": spec["holder_did"],
+                        "collector_did": spec["collector_did"],
+                        "reason": "ds-e2e scenario apply",
+                    },
+                    headers=self.admin,
+                )
+                if status == 200:
+                    report.did(
+                        f"reinstated collector {spec['collector_did']} for "
+                        f"{spec['holder_did']} (revoked by an earlier destroy)"
+                    )
+                else:
+                    report.problem(
+                        f"could not reinstate collector {spec['collector_did']}: "
+                        f"HTTP {status} {payload}"
+                    )
+            else:
+                report.problem(
+                    f"collector {spec['collector_did']} for {spec['holder_did']} is "
+                    f"revoked (by {payload.get('revoked_by')} at "
+                    f"{payload.get('revoked_at')}: "
+                    f"{payload.get('revocation_reason')}); "
+                    "the scenario does not lift somebody else's revocation"
+                )
+        elif status in (200, 201):
             report.did(
                 f"{spec['collector_did']} collects consent for {spec['holder_did']}"
             )
@@ -484,7 +522,9 @@ class ScenarioRunner:
 
         Deregistering a participant deactivates it and revokes its credentials
         rather than deleting the row — a DID that has transacted has to stay
-        auditable. ``apply`` reactivates it, so the cycle is still repeatable.
+        auditable. ``apply`` reactivates it, so the cycle is still repeatable (a
+        collector relation through an explicit reinstatement: a re-add never
+        revives a revoked pair).
         """
         report = ScenarioReport(name=self.scenario.get("name", "scenario"))
 
@@ -495,7 +535,7 @@ class ScenarioRunner:
                 body={
                     "holder_did": relation["holder_did"],
                     "collector_did": relation["collector_did"],
-                    "reason": "ds-e2e scenario destroy",
+                    "reason": DESTROY_REASON,
                 },
                 headers=self.admin,
             )

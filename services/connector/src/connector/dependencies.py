@@ -920,6 +920,7 @@ async def verify_person(
         roles,
         trust_list_url=settings.trust_list_url,
         did_web_use_https=settings.did_web_use_https,
+        did_web_allowance=settings.did_web_allowance,
         expected_linked_participant=linked_participant,
         credential_status_path=settings.credential_status_path,
         credential_status_url=settings.credential_status_url,

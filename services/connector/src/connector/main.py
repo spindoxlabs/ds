@@ -228,6 +228,13 @@ async def lifespan(app: FastAPI):
         )
     guard.enforce()
 
+    # ADR-0029: a widened outbound boundary is said out loud at every start.
+    if settings.did_web_allowance:
+        log.warning(
+            "did:web internal allowance active: %s",
+            settings.did_web_allowance.describe(),
+        )
+
     await verify_schema()
 
     _load_vocabulary_cache(settings)

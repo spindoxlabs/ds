@@ -88,6 +88,19 @@ clientId: ""
 # "" → https://<trustAnchor host>.<baseDomain>/trust. Resolution proves who
 # signed a credential, the list proves the dataspace still stands behind them —
 # a withdrawn accreditation is invisible without it.
+# did:web internal allowance (ADR-0029). The issuer of a person's credential is
+# resolved over did:web, and under DS_ENV=production only public addresses are
+# dialled. Where the cluster resolves the dataspace's own hosts to a private address,
+# list those hosts' suffixes AND the networks they may resolve to (both or neither;
+# the render fails otherwise). Link-local, multicast, reserved and unspecified stay
+# refused; any other host is unaffected. The helmfile forwards the dataspace's
+# authority.identityRegistry.didWeb here; a participant's own block overrides it.
+#   internalHosts: [.ds.example.org]
+#   internalNetworks: [192.168.1.10/32]
+didWeb:
+  internalHosts: []
+  internalNetworks: []
+
 trustAnchor:
   did: ""
   trustListUrl: ""

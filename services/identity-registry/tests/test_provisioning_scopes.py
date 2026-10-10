@@ -92,15 +92,22 @@ def test_an_organisation_client_holds_the_connector_grants_and_the_edc_scopes():
     `ds_auth` owns and `clients.yaml` declares, nothing added here. The EDC half
     (with `edc.management`, which adds the EDC audience) is held optional, and so
     are the organisation's own acts — consent registration, its read-back and
-    publishing (ADR-0026)."""
-    from ds_auth import EDC_MANAGEMENT_SCOPE, ORGANISATION_ACTION_SCOPES
+    publishing (ADR-0026) — and the read an organisation lists its own consumer
+    requests with, without the power to negotiate (`ORGANISATION_READ_SCOPES`)."""
+    from ds_auth import (
+        EDC_MANAGEMENT_SCOPE,
+        ORGANISATION_ACTION_SCOPES,
+        ORGANISATION_READ_SCOPES,
+    )
 
     assert ORGANISATION_CLIENT_SCOPES == [
         *CONNECTOR_SCOPES,
         *MANAGEMENT_API_SCOPES,
         EDC_MANAGEMENT_SCOPE,
         *ORGANISATION_ACTION_SCOPES,
+        *ORGANISATION_READ_SCOPES,
     ]
+    assert "management-api:negotiations:read" in ORGANISATION_CLIENT_SCOPES
     assert [s for s in CONNECTOR_SCOPES if is_management_api_scope(s)] == []
     assert not set(ORGANISATION_ACTION_SCOPES) & set(CONNECTOR_SCOPES)
 

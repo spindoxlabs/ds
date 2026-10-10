@@ -426,6 +426,10 @@ through them, so a block naming one fails rather than silently competing.
           name: {{ $p.name | quote }}
           role: {{ $p.role | quote }}
           did: {{ $p.did | default "" | quote }}
+      # ADR-0029 (extended): the dataspace's did:web allowance, read by ds's
+      # DidWebGuardExtension; a participant's own `edc.didWeb` overrides it.
+      - didWeb:
+          {{- toYaml ($root.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
       - {{ $blocks.edc | toYaml | nindent 8 }}
       - secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "edc_%s" (replace "-" "_" $p.name)) | quote }}
@@ -446,6 +450,10 @@ through them, so a block naming one fails rather than silently competing.
       - participant:
           name: {{ $p.name | quote }}
           role: {{ $p.role | quote }}
+      # ADR-0029 (extended): the dataspace's did:web allowance, the block every
+      # identity registry gets; a participant's own `provenance.didWeb` overrides it.
+      - didWeb:
+          {{- toYaml ($root.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
       - {{ $blocks.provenance | toYaml | nindent 8 }}
       - secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" (replace "-" "_" $p.name)) | quote }}
@@ -477,6 +485,10 @@ through them, so a block naming one fails rather than silently competing.
       # governance, sync, networkPolicy.ingressFrom, trustAnchor, notify,
       # personTokenRequired, podAnnotations, clientId, vocabularies, … — the
       # chart's values, whole.
+      # ADR-0029 (extended): the dataspace's did:web allowance, the block every
+      # identity registry gets; a participant's own `connector.didWeb` overrides it.
+      - didWeb:
+          {{- toYaml ($root.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
       - {{ $blocks.connector | toYaml | nindent 8 }}
       - secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "connector_%s" (replace "-" "_" $p.name)) | quote }}

@@ -327,6 +327,53 @@ def test_a_refused_relation_is_a_problem_not_a_pass():
     assert any("could not accept collector" in p for p in report.problems)
 
 
+def test_apply_reinstates_a_relation_its_own_destroy_revoked():
+    """`destroy` revokes the relation and the registry no longer revives a revoked
+    pair on a re-add, so `apply` reinstates it, explicitly, but only when the
+    revocation is the scenario's own."""
+    runner, calls = _collector_runner(
+        {
+            ("POST", "/admin/credentials/data-subject"): (201, {"subjectDid": PERSON}),
+            ("POST", "/admin/consent-collectors/reinstate"): (
+                200,
+                {"status": "active"},
+            ),
+            ("POST", "/admin/consent-collectors"): (
+                200,
+                {
+                    "status": "revoked",
+                    "revocation_reason": "ds-e2e scenario destroy",
+                    "revoked_by": "svc-ds-e2e",
+                },
+            ),
+        }
+    )
+    report = runner.apply()
+    assert report.ok, report.problems
+    assert ("POST", f"{runner.ir}/admin/consent-collectors/reinstate") in calls
+
+
+def test_apply_leaves_a_relation_somebody_else_revoked():
+    runner, calls = _collector_runner(
+        {
+            ("POST", "/admin/credentials/data-subject"): (201, {"subjectDid": PERSON}),
+            ("POST", "/admin/consent-collectors/reinstate"): (200, {}),
+            ("POST", "/admin/consent-collectors"): (
+                200,
+                {
+                    "status": "revoked",
+                    "revocation_reason": "agreement ended",
+                    "revoked_by": "operator",
+                    "revoked_at": "2026-10-01T00:00:00Z",
+                },
+            ),
+        }
+    )
+    report = runner.apply()
+    assert any("revoked" in p and "agreement ended" in p for p in report.problems)
+    assert ("POST", f"{runner.ir}/admin/consent-collectors/reinstate") not in calls
+
+
 def test_destroy_revokes_the_relation_and_stays_narrow():
     runner, calls = _collector_runner({})
     report = runner.destroy()

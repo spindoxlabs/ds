@@ -1256,6 +1256,35 @@ async def _apply_steps(
             )
         )
 
+    # ── A participant somebody deactivated stays deactivated ──────
+    # The anchor's bootstrap re-applies its seed on every start. A participant an
+    # operator deactivated (`participant remove`, `DELETE /admin/participants`)
+    # while its owner stays verified was reactivated here by promotion, and after
+    # a DELETE (which revokes its credentials) a new OrganizationCredential was
+    # issued first. Re-admission is explicit (`PATCH /admin/participants/{did}`
+    # with `active: true`); the seed does not do it in passing.
+    if owner.did:
+        deactivated = (
+            await db.execute(
+                select(Participant).where(
+                    Participant.did == owner.did, Participant.active.is_(False)
+                )
+            )
+        ).scalar_one_or_none()
+        if deactivated is not None:
+            when = (
+                deactivated.deactivated_at.isoformat()
+                if deactivated.deactivated_at
+                else "an unrecorded time"
+            )
+            reason = (
+                f"{deactivated.did} was deactivated at {when}; org apply does not "
+                "reactivate it (PATCH /admin/participants/{did} with active=true does)"
+            )
+            outcome.steps.append(ApplyStep("credential", "skipped", reason))
+            outcome.steps.append(ApplyStep("participant", "skipped", reason))
+            return
+
     # ── 4. organisation credential ────────────────────────────────
     if not owner.agreement_id:
         outcome.steps.append(

@@ -194,6 +194,12 @@ scopes:
     description: EDC management API - request a counterparty catalogue
   - name: management-api:negotiations:write
     description: EDC management API - start, read, terminate and resume negotiations
+  # Read only, for the organisation's own listing at its ds connector
+  # (`GET /consumer/requests`, `GET /consumer/negotiations/{id}`) without the power
+  # to negotiate (`ds_auth.ORGANISATION_READ_SCOPES`). Not in the connector's EDC
+  # token.
+  - name: management-api:negotiations:read
+    description: EDC management API - read negotiations (an organisation lists its own consumer requests)
   - name: management-api:agreements:read
     description: EDC management API - read contract agreements
   - name: management-api:transfers:write

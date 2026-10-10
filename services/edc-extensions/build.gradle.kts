@@ -51,6 +51,21 @@ dependencies {
     // on it. The interface lives in the extension module, not an SPI; the runtime
     // packages it through `control-plane-sql`, so compileOnly.
     compileOnly("org.eclipse.edc:sql-bootstrapper:$edcVersion")
+    // The did:web address guard (ADR-0029, `DidWebGuardExtension`): it re-registers
+    // EDC's own `WebDidResolver` for the method `web` with an `EdcHttpClientImpl`
+    // over a copy of the runtime's `OkHttpClient` whose `Dns` checks every
+    // resolved address. All provided by the runtime (`identity-did-web`,
+    // `http-lib`, failsafe), so compileOnly, and on the test classpath explicitly.
+    compileOnly("org.eclipse.edc:identity-did-spi:$edcVersion")
+    compileOnly("org.eclipse.edc:identity-did-web:$edcVersion")
+    compileOnly("org.eclipse.edc:http-spi:$edcVersion")
+    compileOnly("org.eclipse.edc:http-lib:$edcVersion")
+    compileOnly("dev.failsafe:failsafe:3.3.2")
+    testImplementation("org.eclipse.edc:identity-did-spi:$edcVersion")
+    testImplementation("org.eclipse.edc:identity-did-web:$edcVersion")
+    testImplementation("org.eclipse.edc:http-spi:$edcVersion")
+    testImplementation("org.eclipse.edc:http-lib:$edcVersion")
+    testImplementation("dev.failsafe:failsafe:3.3.2")
     // HTTP client for consent check
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Matches (or exceeds) the jackson EDC's own BOMs resolve to at runtime

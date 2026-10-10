@@ -161,15 +161,112 @@ async def test_revocation_marks_and_keeps_the_row(client, world):
         ("revoked", "agreement ended")
     ]
 
-    # Adding it again reactivates the same row.
-    r = await client.post(
-        "/admin/consent-collectors",
-        json={"holder_did": HOLDER, "collector_did": COLLECTOR},
+
+
+@pytest.mark.asyncio
+async def test_adding_a_revoked_pair_again_leaves_it_revoked(client, world):
+    """A declarative bootstrap re-adds the pair on every start; it must not revive it.
+
+    The add succeeds (a seed that runs `collector add` keeps working) and changes
+    nothing: the row stays revoked, with who revoked it, when and why, so the
+    caller can see that the pair it declared is not in force.
+    """
+    pair = {"holder_did": HOLDER, "collector_did": COLLECTOR}
+    await client.post("/admin/consent-collectors", json=pair, headers=WRITE)
+    revoked = await client.post(
+        "/admin/consent-collectors/revoke",
+        json={**pair, "reason": "agreement ended"},
         headers=WRITE,
     )
-    assert r.json()["status"] == "active"
-    assert r.json()["revoked_at"] is None
+    before = revoked.json()
+    assert before["revoked_by"] == "test"
+
+    r = await client.post("/admin/consent-collectors", json=pair, headers=WRITE)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "revoked"
+    assert body["revoked_at"] == before["revoked_at"]
+    assert body["revoked_by"] == "test"
+    assert body["revocation_reason"] == "agreement ended"
+    assert body["updated_at"] == before["updated_at"]
+    assert (await _check(client))["accepted"] is False
+
+
+@pytest.mark.asyncio
+async def test_reinstating_is_explicit_and_recorded(client, world):
+    pair = {"holder_did": HOLDER, "collector_did": COLLECTOR}
+    await client.post("/admin/consent-collectors", json=pair, headers=WRITE)
+    await client.post(
+        "/admin/consent-collectors/revoke",
+        json={**pair, "reason": "agreement ended"},
+        headers=WRITE,
+    )
+    r = await client.post(
+        "/admin/consent-collectors/reinstate",
+        json={**pair, "reason": "agreement renewed"},
+        headers=WRITE,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "active"
+    assert body["reinstated_by"] == "test"
+    assert body["reinstated_at"] is not None
+    assert body["reinstatement_reason"] == "agreement renewed"
+    # The revocation it lifted stays on the row as history.
+    assert body["revocation_reason"] == "agreement ended"
     assert (await _check(client))["accepted"] is True
+
+
+@pytest.mark.asyncio
+async def test_reinstating_needs_a_reason_a_known_pair_and_a_revoked_one(
+    client, world
+):
+    pair = {"holder_did": HOLDER, "collector_did": COLLECTOR}
+    r = await client.post(
+        "/admin/consent-collectors/reinstate",
+        json={**pair, "reason": "renewed"},
+        headers=WRITE,
+    )
+    assert r.status_code == 404
+    await client.post("/admin/consent-collectors", json=pair, headers=WRITE)
+    r = await client.post(
+        "/admin/consent-collectors/reinstate",
+        json={**pair, "reason": ""},
+        headers=WRITE,
+    )
+    assert r.status_code == 422
+    # An active pair has nothing to reinstate: answered as it is, nothing recorded.
+    r = await client.post(
+        "/admin/consent-collectors/reinstate",
+        json={**pair, "reason": "renewed"},
+        headers=WRITE,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "active"
+    assert r.json()["reinstated_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_reinstating_keeps_the_add_preconditions(client, world, db_session):
+    """A reinstatement is not a way round `add`'s checks: the collector must
+    still be a verified organisation."""
+    pair = {"holder_did": HOLDER, "collector_did": COLLECTOR}
+    await client.post("/admin/consent-collectors", json=pair, headers=WRITE)
+    await client.post(
+        "/admin/consent-collectors/revoke",
+        json={**pair, "reason": "ended"},
+        headers=WRITE,
+    )
+    owner = await db_session.get(Owner, "example-rec")
+    owner.status = "suspended"
+    await db_session.commit()
+    r = await client.post(
+        "/admin/consent-collectors/reinstate",
+        json={**pair, "reason": "renewed"},
+        headers=WRITE,
+    )
+    assert r.status_code == 422
+    assert "verified" in r.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -200,6 +297,11 @@ async def test_revoking_an_unknown_pair_is_a_404_and_needs_a_reason(client, worl
         (
             "POST",
             "/admin/consent-collectors/revoke",
+            {"holder_did": HOLDER, "collector_did": COLLECTOR, "reason": "x-reason"},
+        ),
+        (
+            "POST",
+            "/admin/consent-collectors/reinstate",
             {"holder_did": HOLDER, "collector_did": COLLECTOR, "reason": "x-reason"},
         ),
         ("GET", "/admin/consent-collectors", None),

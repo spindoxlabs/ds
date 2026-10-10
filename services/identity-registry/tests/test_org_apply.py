@@ -1128,3 +1128,103 @@ async def test_without_run_evidence_the_missing_block_is_still_the_reason(
 
     assert outcome.applied is False
     assert [s.detail for s in outcome.steps] == ["no dataspace: block"]
+
+
+# ── A re-apply never revives a deactivated participant ───────────────────────
+#
+# The anchor's bootstrap runs `org apply` on every start. A participant an operator
+# deactivated (`ir-cli participant remove`, `DELETE /admin/participants/{did}`) while
+# its owner stays verified was reactivated by the next restart: promotion set
+# `active = True`, and after a DELETE (which revokes the participant's credentials,
+# the OrganizationCredential included) a fresh credential was issued first.
+
+
+async def _enrolled_and_applied(db_session, tmp_path):
+    settings = await _seed(db_session, tmp_path)
+    await ops.apply_owner_entry(db_session, settings, _entry())
+    await db_session.commit()
+    await register_enrolled(db_session, ORG_DID, roles=["consumer"])
+    outcome = await ops.apply_owner_entry(db_session, settings, _entry())
+    await db_session.commit()
+    assert outcome.ok, outcome.error
+    return settings
+
+
+async def _participant(db_session) -> Participant:
+    return (
+        await db_session.execute(select(Participant).where(Participant.did == ORG_DID))
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_a_re_apply_leaves_a_deactivated_participant_deactivated(
+    db_session, tmp_path
+):
+    settings = await _enrolled_and_applied(db_session, tmp_path)
+    participant = await _participant(db_session)
+    participant.active = False
+    participant.deactivated_at = datetime.now(UTC)
+    await db_session.commit()
+
+    outcome = await ops.apply_owner_entry(db_session, settings, _entry())
+    await db_session.commit()
+
+    assert outcome.ok, outcome.error
+    steps = {s.step: s for s in outcome.steps}
+    assert steps["participant"].action == "skipped"
+    assert "deactivated" in steps["participant"].detail
+    await db_session.refresh(participant)
+    assert participant.active is False
+    assert participant.deactivated_at is not None
+
+
+@pytest.mark.asyncio
+async def test_a_re_apply_after_a_participant_delete_issues_nothing(
+    client, db_session, tmp_path
+):
+    """`DELETE /admin/participants/{did}` revokes the participant's credentials;
+    a re-apply must not mint the organisation a new one and reactivate it."""
+    settings = await _enrolled_and_applied(db_session, tmp_path)
+    r = await client.delete(f"/admin/participants/{ORG_DID}", headers=ADMIN_HEADERS)
+    assert r.status_code == 204, r.text
+    db_session.expire_all()
+    credentials_before = (
+        await db_session.execute(select(func.count()).select_from(Credential))
+    ).scalar_one()
+
+    outcome = await ops.apply_owner_entry(db_session, settings, _entry())
+    await db_session.commit()
+
+    assert outcome.ok, outcome.error
+    steps = {s.step: s for s in outcome.steps}
+    assert steps["credential"].action == "skipped"
+    assert steps["participant"].action == "skipped"
+    credentials_after = (
+        await db_session.execute(select(func.count()).select_from(Credential))
+    ).scalar_one()
+    assert credentials_after == credentials_before
+    assert (await _participant(db_session)).active is False
+
+
+@pytest.mark.asyncio
+async def test_an_explicitly_reactivated_participant_is_applied_again(
+    client, db_session, tmp_path
+):
+    """Re-admission is the explicit act (`PATCH /admin/participants/{did}`); after
+    it, the apply completes the chain as before."""
+    settings = await _enrolled_and_applied(db_session, tmp_path)
+    participant = await _participant(db_session)
+    participant.active = False
+    participant.deactivated_at = datetime.now(UTC)
+    await db_session.commit()
+    r = await client.patch(
+        f"/admin/participants/{ORG_DID}", json={"active": True}, headers=ADMIN_HEADERS
+    )
+    assert r.status_code == 200, r.text
+    db_session.expire_all()
+
+    outcome = await ops.apply_owner_entry(db_session, settings, _entry())
+    await db_session.commit()
+    assert outcome.ok, outcome.error
+    assert {s.step: s.action for s in outcome.steps}["participant"] == "unchanged"
+    assert (await _participant(db_session)).active is True

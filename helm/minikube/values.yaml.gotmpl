@@ -51,7 +51,8 @@ authority:
     credentialService:
       expose: false
     # In-cluster, `*.ds.test` resolves to the node through ingress-dns: a private address,
-    # admitted for these hosts only (ADR-0029).
+    # admitted for these hosts only (ADR-0029). Forwarded to every registry, connector,
+    # provenance and EDC: each fetches did:web behind the same guard.
     didWeb:
       internalHosts: [.ds.test]
       internalNetworks: ['{{ requiredEnv "DS_MK_NODE_IP" }}/32']

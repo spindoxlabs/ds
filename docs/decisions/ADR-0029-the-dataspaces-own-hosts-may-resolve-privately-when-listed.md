@@ -4,6 +4,7 @@
 **Status:** accepted, implemented 2026-10-10
 **Refines:** the identity registry's outbound boundary (`P-8d`: only admissible addresses are
 dialled for a counterparty-chosen URL)
+**Amended:** 2026-10-10, scope extended to every did:web fetch in ds (see *Amendment*)
 
 ## Context
 
@@ -52,10 +53,51 @@ and every participant registry: the hosts are the dataspace's, not one release's
   without weakening the rule for any other host.
 - The allowance is a widened boundary that a reviewer must see: it is two values in the
   deployment's values file and a warning line in every registry's log.
-- Not covered: the services that verify a person's credential (`ds_auth.did_web`, connector,
-  provenance) and the EDC's did:web resolution have no address guard at all; they resolve the
-  dataspace's hosts privately today. Whether they should gain the same boundary is a separate
-  decision.
+- ~~Not covered: the services that verify a person's credential (`ds_auth.did_web`, connector,
+  provenance) and the EDC's did:web resolution have no address guard at all.~~ Covered since the
+  amendment below.
+
+## Amendment (2026-10-10): one guard for every did:web fetch
+
+**Decision (the maintainer):** the behaviour is the same wherever ds fetches a did:web
+document. Three fetchers existed and only the identity registry's was guarded:
+
+| Fetcher | Fetches | Guard |
+|---|---|---|
+| identity registry (`identity_registry.services.did_resolver`, async httpx) | enrolment, presentation verification, credential delivery | the rules, now from `ds_auth.address_guard`; its own transport |
+| connector and provenance (`ds_auth.did_web`, sync) | the issuer of a person's credential (`X-User-VC`) | `ds_auth.address_guard.guarded_sync_transport`: httpx over an httpcore backend that resolves, checks and dials the checked address; no redirect, no environment proxy (both would move the request past the check) |
+| EDC (upstream `WebDidResolver`) | the counterparty's DID during DCP | ds's `DidWebGuardExtension`: the same upstream resolver class, re-registered for `web` over a copy of the runtime's `OkHttpClient` whose `Dns` checks every answer |
+
+The same refusal rules everywhere: public only under `DS_ENV=production`; private and loopback
+too under `DS_ENV=dev`; link-local, multicast, reserved and unspecified never; every resolved
+address checked, on the address dialled. The same optional allowance, **configured per
+service** (`IDENTITY_REGISTRY_`, `CONNECTOR_`, `PROVENANCE_DID_WEB_INTERNAL_HOSTS`/`_NETWORKS`;
+the EDC's `ds.did.web.internal.hosts`/`.networks`), validated the same way at load, logged the
+same way at start. The charts expose `didWeb.{internalHosts,internalNetworks}` on
+`ds-connector`, `ds-provenance` and `ds-edc`; the helmfile forwards the dataspace's one block
+(`authority.identityRegistry.didWeb`) to them as the default, and a participant's block may set
+its own.
+
+**One implementation where the dependency graph allows it.** The rules and the allowance's
+validation live in `ds_auth.address_guard`, which the identity registry, the connector and
+provenance all depend on; the registry keeps only its async transport. The EDC is Java and
+cannot share it: `DidWebAddressGuard` restates the rules, tested against the same vectors
+(it is stricter than Python's `ipaddress` on a few special-purpose ranges).
+
+**EDC 0.18.0, read at the tag.** `WebDidExtension` builds `WebDidResolver` over the shared
+`EdcHttpClient` in `initialize` and registers it in `DidResolverRegistry`, whose
+`DidResolverRegistryImpl` keeps one resolver per method (last `register` wins). Neither the
+`OkHttpClient` nor the `EdcHttpClient` provider is `isDefault`, and both are injected by DSP,
+DCP, OAuth2, the data plane and more, so overriding them would guard far more than did:web and
+depend on extension order. `ExtensionLifecycleManager` runs every `initialize` before any
+`prepare`, so ds registers its resolver in `prepare` and replaces EDC's regardless of order.
+`edc.webdid.doh.url` (EDC's only per-resolver option) is refused at start rather than dropped.
+
+**Not covered, deliberately:** URLs that are configuration rather than a counterparty's choice
+(the trust list, the status registers, the identity registry's own URL, JWKS), and in the EDC
+the other URLs a DID document or credential names (the DCP credential service, status lists,
+DSP addresses), which go through EDC's shared client. A proxy configured on a client would be
+the address checked, not the target; ds configures none.
 
 ## Alternatives considered
 

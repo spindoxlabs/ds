@@ -424,6 +424,12 @@ class RevokeConsentCollectorRequest(ConsentCollectorRequest):
     reason: str = Field(min_length=3)
 
 
+class ReinstateConsentCollectorRequest(ConsentCollectorRequest):
+    """Lift a revocation. The reason is required and stays on the row."""
+
+    reason: str = Field(min_length=3)
+
+
 class UserResolveRequest(BaseModel):
     """The identifiers `POST /users/resolve` looks a person up by.
 

@@ -152,10 +152,15 @@ these; the connector's cache is invalidated by a push from here on change.
 consent, and the organisation holding their data registers it at its own connector. The
 relation is a pair of DIDs, managed on `identity-registry.collectors.write`
 (`POST /admin/consent-collectors`, `POST /admin/consent-collectors/revoke`,
-`GET /admin/consent-collectors`, and `ir-cli collector add|revoke|list`). The holder must be
-an active participant and the collector exactly one verified owner; a holder always collects
-for itself, so that pair is never recorded. Revocation marks the row with its reason and never
-deletes it. The connector asks `GET /consent-collectors/check?holder_did=…&collector_did=…`
+`POST /admin/consent-collectors/reinstate`, `GET /admin/consent-collectors`, and
+`ir-cli collector add|revoke|reinstate|list`). The holder must be an active participant and the
+collector exactly one verified owner; a holder always collects for itself, so that pair is
+never recorded. Revocation marks the row with who, when and why, and never deletes it.
+**A revocation survives a re-add**: adding a revoked pair (the anchor's bootstrap does it on
+every start) changes nothing, answers `200` with the row as it is (status `revoked`, by whom,
+when, why), and `ir-cli collector add` exits 0 saying so. Lifting it is the explicit
+`reinstate`, with a reason, under the same preconditions as an add; the row records who
+reinstated it, when and why, and keeps the revocation it lifted as history. The connector asks `GET /consent-collectors/check?holder_did=…&collector_did=…`
 on `identity-registry.read`, one pair at a time, and learns whether to accept and **which
 owner** the collector is — the organisation a subject's membership is checked against. A
 suspended owner is not accepted while its relation stands. Every write sends the connectors

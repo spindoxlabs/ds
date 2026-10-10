@@ -324,3 +324,68 @@ async def test_an_organisation_token_reads_no_person_s_consents(
     r = await client.request(method, path, headers=make_org_headers(), json=body)
     assert r.status_code == 401, r.text
     assert "Verifiable Credential" in r.json()["detail"]
+
+
+# ── Listing its own requests, and the 409 that names them ──────────────────
+
+READ_ONLY = ("management-api:negotiations:read",)
+
+
+@pytest.mark.asyncio
+async def test_a_read_only_organisation_token_lists_its_own_requests(consumer):
+    """`management-api:negotiations:read` alone lists; it cannot negotiate."""
+    client, _svc, _factory = consumer
+    r = await client.post("/consumer/negotiate", json=NEGOTIATE, headers=_org())
+    assert r.status_code == 200, r.text
+    listed = await client.get("/consumer/requests", headers=_org(scopes=READ_ONLY))
+    assert listed.status_code == 200, listed.text
+    assert [row["asset_id"] for row in listed.json()] == [ASSET]
+    refused = await client.post(
+        "/consumer/negotiate", json=NEGOTIATE, headers=_org(scopes=READ_ONLY)
+    )
+    assert refused.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_a_repeated_negotiation_names_the_request_and_the_negotiation(consumer):
+    """The 409 names the id `POST /consumer/requests/{request_id}/revoke` takes,
+    and each other id under its own name. It said `id=<negotiation id>`."""
+    client, _svc, factory = consumer
+    assert (
+        await client.post("/consumer/negotiate", json=NEGOTIATE, headers=_org())
+    ).status_code == 200
+    async with factory() as session:
+        row = (await session.execute(select(ConsumerAccessRequestORM))).scalar_one()
+    again = await client.post("/consumer/negotiate", json=NEGOTIATE, headers=_org())
+    assert again.status_code == 409
+    detail = again.json()["detail"]
+    assert f"request_id={row.id}" in detail
+    assert f"negotiation_id={row.negotiation_id}" in detail
+    assert " id=" not in detail and "(id=" not in detail
+
+
+@pytest.mark.asyncio
+async def test_a_negotiation_blocked_by_a_transfer_names_the_request_and_the_transfer(
+    consumer,
+):
+    """With an active transfer the 409 said `id=<transfer id>`: not a request id,
+    so the revoke route answered 404 to it."""
+    client, _svc, factory = consumer
+    assert (
+        await client.post("/consumer/negotiate", json=NEGOTIATE, headers=_org())
+    ).status_code == 200
+    assert (
+        await client.post("/consumer/transfer", json=TRANSFER, headers=_org())
+    ).status_code == 200
+    async with factory() as session:
+        row = (await session.execute(select(ConsumerAccessRequestORM))).scalar_one()
+    again = await client.post("/consumer/negotiate", json=NEGOTIATE, headers=_org())
+    assert again.status_code == 409
+    detail = again.json()["detail"]
+    assert f"request_id={row.id}" in detail
+    assert "transfer_id=tp-1" in detail
+    assert "(id=" not in detail
+    revoke = await client.post(
+        f"/consumer/requests/{row.id}/revoke", json={"reason": "retry"}, headers=_org()
+    )
+    assert revoke.status_code == 200, revoke.text

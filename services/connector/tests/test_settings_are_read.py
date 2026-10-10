@@ -35,6 +35,10 @@ REPO = Path(__file__).resolve().parents[3]
 #: reason — an entry here is an exemption from the rule above, not a parking
 #: space for the next dead setting.
 READ_ELSEWHERE = {
+    # Read, as a pair, by `ds_auth.address_guard.InternalAllowance.from_settings`:
+    # the shared parser and validator of the ADR-0029 allowance.
+    "did_web_internal_hosts",
+    "did_web_internal_networks",
     # Consumed by the settings model itself: `load_file_secrets` folds it into
     # `edc_callback_secret`, and nothing reads the path again.
     "edc_callback_secret_file",

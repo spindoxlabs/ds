@@ -206,7 +206,10 @@ authority:
     credentialService:
       expose: false
 
-    # did:web internal allowance (ADR-0029), forwarded to every identity registry.
+    # did:web internal allowance (ADR-0029), forwarded to every identity registry and
+    # to every participant's connector, provenance (the issuer of a person's
+    # credential) and EDC (the counterparty's DID, ds's DidWebGuardExtension); a
+    # participant's own connector.didWeb / provenance.didWeb / edc.didWeb overrides it.
     # Empty: the registries fetch did:web documents only from public addresses,
     # which is right wherever the dataspace's hosts resolve publicly from inside the
     # cluster too. Where the cluster answers them with a private address, list the

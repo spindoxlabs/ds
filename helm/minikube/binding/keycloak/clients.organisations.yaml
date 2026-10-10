@@ -28,6 +28,7 @@ clients:
       - management-api:contractdefinitions:write
       - management-api:catalog:read
       - management-api:negotiations:write
+      - management-api:negotiations:read
       - management-api:agreements:read
       - management-api:transfers:write
       - edc.management
@@ -76,6 +77,7 @@ clients:
       - management-api:contractdefinitions:write
       - management-api:catalog:read
       - management-api:negotiations:write
+      - management-api:negotiations:read
       - management-api:agreements:read
       - management-api:transfers:write
       - edc.management

@@ -136,6 +136,18 @@ data:
 
     # did:web resolution over HTTPS — a DID document carries trust keys.
     edc.iam.did.web.use.https={{ .Values.didWebUseHttps }}
+    {{- $dw := .Values.didWeb | default dict }}
+    {{- $dwHosts := $dw.internalHosts | default list }}
+    {{- $dwNets := $dw.internalNetworks | default list }}
+    {{- if or $dwHosts $dwNets }}
+    {{- if not (and $dwHosts $dwNets) }}
+    {{- fail "didWeb: set both internalHosts and internalNetworks, or neither (ADR-0029)" }}
+    {{- end }}
+    # ADR-0029: ds's did:web address guard (DidWebGuardExtension) admits the
+    # dataspace's own hosts into these private networks.
+    ds.did.web.internal.hosts={{ join "," $dwHosts }}
+    ds.did.web.internal.networks={{ join "," $dwNets }}
+    {{- end }}
 
     # ── EDC's own federated catalogue crawler — off ───────────────────────────
     # `controlplane-base-bom` pulls in `catalog-crawler-core` from EDC 0.18.0 and

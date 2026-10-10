@@ -1588,7 +1588,26 @@ def owner_import(
                     # Only touch the verification claim when the seed declares
                     # one — an upsert that omits `status` must not silently
                     # downgrade an already-verified owner to pending.
-                    if "status" in entry:
+                    #
+                    # **And never over a suspension or a revocation.** The
+                    # anchor's bootstrap re-imports its seed on every start, and
+                    # a seed's `status: verified` undid `org suspend` / `org
+                    # revoke` at the next restart (verified again, with its
+                    # participant inactive and its credentials still held).
+                    # Lifting a suspension is `org reinstate`; revocation is
+                    # terminal.
+                    held = existing.status in ("suspended", "revoked")
+                    if held and entry.get("status") not in (None, existing.status):
+                        typer.echo(
+                            f"  {oid}: {existing.status}; the seed's status "
+                            f"{entry.get('status')!r} is not applied ("
+                            + (
+                                "lift a suspension with `ir-cli org reinstate`)"
+                                if existing.status == "suspended"
+                                else "revocation is terminal)"
+                            )
+                        )
+                    elif "status" in entry:
                         existing_verification = _owner_verification_fields(
                             status=entry.get("status"),
                             verified_by=entry.get("verified_by"),
@@ -2621,14 +2640,19 @@ def collector_add(
         ..., help="The DID of the organisation that collects its members' consent"
     ),
 ):
-    """Accept an organisation as a consent collector for a holder (idempotent)."""
+    """Accept an organisation as a consent collector for a holder (idempotent).
+
+    A pair already revoked **stays revoked**: the command changes nothing, exits 0
+    (the anchor's bootstrap runs it on every start) and says who revoked it, when
+    and why. `collector reinstate` lifts a revocation.
+    """
     from ..services import consent_collectors as collectors
 
     async def _add():
         factory = await _ensure_db()
         async with factory() as session:
             try:
-                row = await collectors.add(
+                outcome = await collectors.add(
                     session,
                     holder_did=holder_did,
                     collector_did=collector_did,
@@ -2638,8 +2662,18 @@ def collector_add(
                 typer.echo(exc.message, err=True)
                 raise typer.Exit(1) from exc
             await session.commit()
+            if outcome.revoked:
+                typer.echo(
+                    f"Consent collector revoked, left unchanged: {collector_did} → "
+                    f"{holder_did} ({collectors.describe_revocation(outcome.row)}). "
+                    "A re-add never lifts a revocation; to lift it: ir-cli collector "
+                    "reinstate --holder-did … --collector-did … --reason …"
+                )
+                return
             typer.echo(
-                f"Consent collector {row.status}: {collector_did} → {holder_did}"
+                f"Consent collector {outcome.row.status}: "
+                f"{collector_did} → {holder_did}"
+                + ("" if outcome.created else " (already)")
             )
 
     _run(_add())
@@ -2650,8 +2684,13 @@ def collector_revoke(
     holder_did: str = typer.Option(..., help="The holder participant's DID"),
     collector_did: str = typer.Option(..., help="The collector's DID"),
     reason: str = typer.Option(..., help="Why — kept on the row"),
+    by: str = typer.Option("ir-cli", "--by", help="Who — kept on the row"),
 ):
-    """Withdraw a collector's acceptance. The row stays, marked revoked."""
+    """Withdraw a collector's acceptance. The row stays, marked revoked.
+
+    The revocation survives `collector add` (and so the anchor's bootstrap);
+    only `collector reinstate` lifts it.
+    """
     from ..services import consent_collectors as collectors
 
     async def _revoke():
@@ -2663,6 +2702,7 @@ def collector_revoke(
                     holder_did=holder_did,
                     collector_did=collector_did,
                     reason=reason,
+                    revoked_by=by,
                 )
             except collectors.CollectorError as exc:
                 typer.echo(exc.message, err=True)
@@ -2671,6 +2711,43 @@ def collector_revoke(
             typer.echo(f"Consent collector revoked: {collector_did} → {holder_did}")
 
     _run(_revoke())
+
+
+@collector_app.command("reinstate")
+def collector_reinstate(
+    holder_did: str = typer.Option(..., help="The holder participant's DID"),
+    collector_did: str = typer.Option(..., help="The collector's DID"),
+    reason: str = typer.Option(..., help="Why — kept on the row"),
+    by: str = typer.Option("ir-cli", "--by", help="Who — kept on the row"),
+):
+    """Lift a revocation: the explicit act a re-add deliberately is not.
+
+    The pair must meet `add`'s preconditions again (an active holder, a verified
+    collector). Who, when and why are kept on the row.
+    """
+    from ..services import consent_collectors as collectors
+
+    async def _reinstate():
+        factory = await _ensure_db()
+        async with factory() as session:
+            before = await collectors.get_relation(session, holder_did, collector_did)
+            was_active = before is not None and before.status == collectors.ACTIVE
+            try:
+                await collectors.reinstate(
+                    session,
+                    holder_did=holder_did,
+                    collector_did=collector_did,
+                    reason=reason,
+                    reinstated_by=by,
+                )
+            except collectors.CollectorError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+            state = "already active" if was_active else "reinstated"
+            typer.echo(f"Consent collector {state}: {collector_did} → {holder_did}")
+
+    _run(_reinstate())
 
 
 @collector_app.command("list")

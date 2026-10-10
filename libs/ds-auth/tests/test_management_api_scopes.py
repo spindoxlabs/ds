@@ -100,7 +100,9 @@ def test_the_file_that_crosses_declares_exactly_the_granted_scopes():
         for s in _load(KEYCLOAK / "clients.yaml").get("scopes") or []
         if is_management_api_scope(s["name"])
     }
-    assert declared == set(MANAGEMENT_API_SCOPES)
+    from ds_auth import ORGANISATION_READ_SCOPES
+
+    assert declared == set(MANAGEMENT_API_SCOPES) | set(ORGANISATION_READ_SCOPES)
 
 
 @pytest.mark.parametrize("path", _files(), ids=lambda p: p.name)
@@ -243,10 +245,13 @@ def test_the_edc_scopes_and_the_acts_are_optional_and_the_service_scopes_default
         "connector.provider.write",
     }
     assert not set(ORGANISATION_ACTION_SCOPES) & set(ORGANISATION_CLIENT_DEFAULT_SCOPES)
+    from ds_auth import ORGANISATION_READ_SCOPES
+
     assert set(ORGANISATION_CLIENT_OPTIONAL_SCOPES) == {
         *MANAGEMENT_API_SCOPES,
         EDC_MANAGEMENT_SCOPE,
         *ORGANISATION_ACTION_SCOPES,
+        *ORGANISATION_READ_SCOPES,
     }
     assert set(ORGANISATION_CLIENT_SCOPES) == {
         *ORGANISATION_CLIENT_DEFAULT_SCOPES,
@@ -400,3 +405,76 @@ def test_the_e2e_flows_request_the_same_consent_scopes():
     }
     assert values["CONSENT_PROVISION_SCOPE"] == CONSENT_PROVISION_SCOPE
     assert values["CONSENT_COLLECTOR_READ_SCOPE"] == CONSENT_COLLECTOR_READ_SCOPE
+
+
+# ── An organisation reads its own consumer requests ─────────────────────────
+
+
+def test_the_organisation_may_ask_for_the_negotiations_read_scope():
+    """`GET /consumer/requests` and `GET /consumer/negotiations/{id}` require
+    `management-api:negotiations:read` of an organisation token. Without it in the
+    organisation client's optional scopes a listing token had to ask for
+    `negotiations:write`, the power to negotiate, merely to read."""
+    from ds_auth import (
+        ORGANISATION_CLIENT_DEFAULT_SCOPES,
+        ORGANISATION_CLIENT_OPTIONAL_SCOPES,
+        ORGANISATION_READ_SCOPES,
+    )
+
+    assert ORGANISATION_READ_SCOPES == ("management-api:negotiations:read",)
+    assert "management-api:negotiations:read" in ORGANISATION_CLIENT_OPTIONAL_SCOPES
+    assert "management-api:negotiations:read" not in ORGANISATION_CLIENT_DEFAULT_SCOPES
+
+
+def test_the_read_scope_is_edc_grammar_and_a_v5_resource():
+    """EDC 0.18.0's `ContractNegotiationApiV5Controller` requires exactly this
+    string (`@RequiredScope("management-api:negotiations:read")`)."""
+    from ds_auth import ORGANISATION_READ_SCOPES
+
+    for scope in ORGANISATION_READ_SCOPES:
+        prefix, resource, action = _parse(scope)
+        assert (prefix, action) == ("management-api", "read")
+        assert resource in EDC_V5_RESOURCES
+        assert is_management_api_scope(scope)
+        assert scope in SERVICE_ONLY_PERMISSIONS
+
+
+def test_the_read_scope_does_not_ride_in_the_edc_token():
+    """The connector's EDC token is stated (and pinned above): a read the ds
+    connector checks is not a power its EDC needs."""
+    from ds_auth import EDC_TOKEN_SCOPE
+
+    assert "management-api:negotiations:read" not in EDC_TOKEN_SCOPE.split()
+
+
+def test_read_alone_does_not_satisfy_write():
+    assert not scope_satisfies(
+        ["management-api:negotiations:read"], "management-api:negotiations:write"
+    )
+    assert scope_satisfies(
+        ["management-api:negotiations:read"], "management-api:negotiations:read"
+    )
+
+
+def test_the_minikube_binding_declares_the_organisation_client_lists():
+    """`helm/minikube/binding/keycloak/clients.organisations.yaml` spells the
+    organisation clients out for the realm sync; a scope ds grants and the binding
+    omits is a token the local cluster cannot mint."""
+    from ds_auth import (
+        ORGANISATION_CLIENT_DEFAULT_SCOPES,
+        ORGANISATION_CLIENT_OPTIONAL_SCOPES,
+    )
+
+    binding = REPO / "helm" / "minikube" / "binding"
+    path = binding / "keycloak" / "clients.organisations.yaml"
+    clients = [
+        c
+        for c in _load(path).get("clients") or []
+        if c["client_id"].startswith("svc-ds-connector-")
+    ]
+    assert clients
+    for client in clients:
+        assert set(client["default_scopes"]) == set(ORGANISATION_CLIENT_DEFAULT_SCOPES)
+        assert set(client["optional_scopes"]) == set(
+            ORGANISATION_CLIENT_OPTIONAL_SCOPES
+        ), client["client_id"]

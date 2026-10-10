@@ -238,3 +238,25 @@ def test_the_suite_runs_without_signature_verification(monkeypatch):
     settings = config_module.Settings()
     assert settings.oidc_issuer_url is None
     assert settings.oidc_insecure_dev is True
+
+
+@pytest.mark.asyncio
+async def test_an_active_did_web_allowance_is_logged_at_start(monkeypatch):
+    """ADR-0029: a widened outbound boundary is said out loud at every start.
+
+    Recorded off the module logger: `create_app` configures logging (`ds_obs`),
+    which replaces the handlers `caplog` relies on."""
+    from provenance import main
+
+    said: list[str] = []
+    monkeypatch.setattr(
+        main.log, "warning", lambda msg, *args: said.append(msg % args)
+    )
+    monkeypatch.setenv("DS_ENV", "dev")
+    monkeypatch.setenv("PROVENANCE_DID_WEB_INTERNAL_HOSTS", ".ds.example.org")
+    monkeypatch.setenv("PROVENANCE_DID_WEB_INTERNAL_NETWORKS", "192.168.1.10/32")
+    await _run_lifespan(monkeypatch)
+    assert (
+        "did:web internal allowance active: hosts under .ds.example.org may "
+        "resolve to 192.168.1.10/32"
+    ) in said

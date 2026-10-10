@@ -48,6 +48,7 @@ async def verified_subject_id(
         {"DataSubject", "ConsumerUser"},
         trust_list_url=settings.trust_list_url,
         did_web_use_https=settings.did_web_use_https,
+        did_web_allowance=settings.did_web_allowance,
         credential_status_path=settings.credential_status_path,
         credential_status_url=settings.credential_status_url,
         insecure_dev=settings.vc_insecure_dev,

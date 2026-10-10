@@ -87,6 +87,17 @@ sqlSchemaAutocreate: true
 # visible; do not set false outside a throwaway cluster.
 didWebUseHttps: true
 
+# did:web internal allowance (ADR-0029). ds's DidWebGuardExtension replaces EDC's
+# did:web resolver with the same class behind an address guard: under
+# DS_ENV=production only public addresses are dialled for a DID document. Where the
+# cluster resolves the dataspace's own hosts to a private address, list those hosts'
+# suffixes AND the networks (both or neither; the render fails otherwise). The
+# helmfile forwards the dataspace's authority.identityRegistry.didWeb here; a
+# participant's own edc.didWeb overrides it.
+didWeb:
+  internalHosts: []
+  internalNetworks: []
+
 # How long a fetched StatusList2021 register is reused, in **milliseconds**, and
 # so the window in which a suspended participant can still negotiate.
 #

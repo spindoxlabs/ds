@@ -28,6 +28,16 @@ REPO = Path(__file__).resolve().parents[3]
 #: reason — an entry here is an exemption from the rule above, not a parking
 #: space for the next dead setting.
 READ_ELSEWHERE: dict[str, str] = {
+    "did_web_internal_hosts": (
+        "read, with `did_web_internal_networks`, by "
+        "`ds_auth.address_guard.InternalAllowance.from_settings`: the shared parser "
+        "and validator of the ADR-0029 allowance, one implementation for every "
+        "did:web fetcher in ds"
+    ),
+    "did_web_internal_networks": (
+        "read with `did_web_internal_hosts` by "
+        "`ds_auth.address_guard.InternalAllowance.from_settings` (ADR-0029)"
+    ),
     "identity_registry_public_url": (
         "read by `Settings.public_base_url` in config.py, which is what the rest "
         "of the service uses. Deriving the URL in one place is the point: six "

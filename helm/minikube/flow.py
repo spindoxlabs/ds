@@ -1,10 +1,8 @@
 """The gates' data-plane-side checks, run **inside** the data-plane stand-in pod.
 
 `helm/minikube/gates.sh` pipes this file into `python` in the stand-in pod (the data
-plane's namespace, admitted by the connectors' `ingressFrom`), preceded by two lines: the
-consumer's organisation client secret and a comma-separated list of consumer
-access-request ids to revoke first (an organisation token cannot list them). Nothing
-secret is printed. The participants come from the environment (CONSUMER, PROVIDER,
+plane's namespace, admitted by the connectors' `ingressFrom`), preceded by one line: the
+consumer's organisation client secret. Nothing secret is printed. The participants come from the environment (CONSUMER, PROVIDER,
 DOMAIN, the namespaces, ASSET). MODE (env, set by the gates script):
 
   jwks   T5.2: `GET /internal/edr-jwks` on both connectors as `svc-ds-dataset-api`,
@@ -17,6 +15,14 @@ DOMAIN, the namespaces, ASSET). MODE (env, set by the gates script):
   query  the last step of `flow` again, on the latest started transfer.
   pep    the two PEP calls only, unauthenticated, with a short timeout: a timeout means
          the network refused them (T5.3's red case).
+  list   the organisation lists its own consumer requests with a token asked for
+         `management-api:negotiations:read` alone (the organisation client's optional
+         read scope); red: a token asked for no negotiation scope is refused, and the
+         read-only token cannot negotiate. Then a repeated negotiation answers 409
+         naming a `request_id` that is in the list.
+
+`flow` first revokes the consumer's earlier requests for the asset, found through
+`GET /consumer/requests` (they would make the negotiation a 409).
 
 Each mode ends with one line `RESULT <mode> <PASS|FAIL> <detail>`.
 """
@@ -50,6 +56,17 @@ def org_headers() -> dict:
         "scope": "management-api:catalog:read management-api:negotiations:write "
                  "management-api:transfers:write management-api:agreements:read"}).json()["access_token"]
     return {"Authorization": f"Bearer {tok}"}
+
+
+def org_token(scope: str | None) -> str:
+    data = {"grant_type": "client_credentials", "client_id": f"svc-ds-connector-{CON}",
+            "client_secret": os.environ["REC_ORG_SECRET"]}
+    if scope:
+        data["scope"] = scope
+    return httpx.post(KC, data=data).json()["access_token"]
+
+
+BLOCKING = {"negotiating", "awaiting_consent", "finalized", "transferring", "transferred"}
 
 
 def poll(url, headers, done, tries=60):
@@ -115,10 +132,36 @@ if MODE == "query":
     print("query:", q.status_code, q.text[:160])
     result(q.status_code == 200, f"query {q.status_code} {q.text[:80]}")
 
+if MODE == "list":
+    read = {"Authorization": "Bearer " + org_token("management-api:negotiations:read")}
+    r = httpx.get(f"{REC}/consumer/requests", headers=read, timeout=60)
+    rows = r.json() if r.status_code == 200 else []
+    print("list with negotiations:read only:", r.status_code, len(rows), "request(s)")
+    bare = {"Authorization": "Bearer " + org_token(None)}
+    red = httpx.get(f"{REC}/consumer/requests", headers=bare, timeout=60)
+    print("list with no negotiation scope:", red.status_code, red.text[:120])
+    neg_ro = httpx.post(f"{REC}/consumer/negotiate", json={"counter_party_address": DSP, "offer_id": "x",
+        "asset_id": ASSET, "assigner": DSO_DID}, headers=read, timeout=60)
+    print("negotiate with negotiations:read only:", neg_ro.status_code)
+    blocking = [row["id"] for row in rows if row.get("asset_id") == ASSET and row.get("status") in BLOCKING]
+    again = httpx.post(f"{REC}/consumer/negotiate", json={"counter_party_address": DSP, "offer_id": "x",
+        "asset_id": ASSET, "assigner": DSO_DID}, headers=H, timeout=60)
+    detail = again.json().get("detail", "") if again.status_code == 409 else again.text[:160]
+    print("repeated negotiation:", again.status_code, detail[:240])
+    named = [rid for rid in blocking if f"request_id={rid}" in detail]
+    result(r.status_code == 200 and bool(rows) and red.status_code == 403 and neg_ro.status_code == 403
+           and again.status_code == 409 and bool(named) and "(id=" not in detail,
+           f"read-only token lists {len(rows)} request(s) (200); no scope {red.status_code}; read-only "
+           f"negotiate {neg_ro.status_code}; repeat 409 names request_id={named[0][:8] if named else None}…")
+
 # MODE == "flow"
-for rid in filter(None, os.environ.get("REVOKE_IDS", "").split(",")):
-    rv = httpx.post(f"{REC}/consumer/requests/{rid}/revoke", json={"reason": "gate rerun"}, headers=H, timeout=60)
-    print("revoked earlier request", rid[:8], rv.status_code)
+read = {"Authorization": "Bearer " + org_token("management-api:negotiations:read")}
+listed = httpx.get(f"{REC}/consumer/requests", headers=read, timeout=60)
+for row in listed.json() if listed.status_code == 200 else []:
+    if row.get("asset_id") == ASSET and row.get("status") in BLOCKING:
+        rv = httpx.post(f"{REC}/consumer/requests/{row['id']}/revoke", json={"reason": "gate rerun"},
+                        headers=H, timeout=60)
+        print("revoked earlier request", row["id"][:8], rv.status_code)
 cat = httpx.post(f"{REC}/consumer/catalog", json={"counter_party_address": DSP, "counter_party_id": DSO_DID},
                  headers=H, timeout=60)
 print("catalog:", cat.status_code)

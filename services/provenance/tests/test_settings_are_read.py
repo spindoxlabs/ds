@@ -26,7 +26,18 @@ REPO = Path(__file__).resolve().parents[3]
 #: Fields whose reader is not a ``settings.<name>`` expression. Each needs a
 #: reason — an entry here is an exemption from the rule above, not a parking
 #: space for the next dead setting.
-READ_ELSEWHERE: dict[str, str] = {}
+READ_ELSEWHERE: dict[str, str] = {
+    "did_web_internal_hosts": (
+        "read, with `did_web_internal_networks`, by "
+        "`ds_auth.address_guard.InternalAllowance.from_settings`: the shared parser "
+        "and validator of the ADR-0029 allowance, one implementation for every "
+        "did:web fetcher in ds"
+    ),
+    "did_web_internal_networks": (
+        "read with `did_web_internal_hosts` by "
+        "`ds_auth.address_guard.InternalAllowance.from_settings` (ADR-0029)"
+    ),
+}
 
 #: ``settings.name``, or the name quoted — a `getattr` is a read like any
 #: other, and the production guard names its variables as strings.

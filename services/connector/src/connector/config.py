@@ -6,7 +6,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from ds_auth.address_guard import InternalAllowance
+from pydantic import Field, PrivateAttr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 #: The zero-config dev values of the at-rest keys (`db/sealed.py`). Public,
@@ -226,6 +227,41 @@ class Settings(BaseSettings):
             "edc.iam.did.web.use.https."
         ),
     )
+    # ADR-0029 (extended): the issuer of a person's credential is resolved
+    # through `ds_auth.did_web`, which dials only public addresses outside
+    # `DS_ENV=dev`. The dataspace's own hosts may resolve to a private address in
+    # a listed network (a cluster whose DNS answers them from inside). Both or
+    # neither; comma-separated; empty changes nothing. The identity registry's
+    # `IDENTITY_REGISTRY_DID_WEB_INTERNAL_*` take the same values.
+    did_web_internal_hosts: str = Field(
+        default="",
+        description=(
+            "Host suffixes of this dataspace's own did:web hosts (e.g. "
+            "`.ds.example.org`) that may resolve to a private address listed in "
+            "`did_web_internal_networks`. Empty: only public addresses."
+        ),
+    )
+    did_web_internal_networks: str = Field(
+        default="",
+        description=(
+            "The private networks (CIDR; a single address is a /32) those hosts may "
+            "resolve to. Required together with `did_web_internal_hosts`."
+        ),
+    )
+    _did_web_allowance: InternalAllowance = PrivateAttr(
+        default_factory=InternalAllowance
+    )
+
+    @model_validator(mode="after")
+    def _did_web_internal_allowance_is_sound(self) -> Settings:
+        """Refused at load: half-configured, a TLD-wide suffix, a default route."""
+        self._did_web_allowance = InternalAllowance.from_settings(self)
+        return self
+
+    @property
+    def did_web_allowance(self) -> InternalAllowance:
+        return self._did_web_allowance
+
     vc_insecure_dev: bool = Field(
         default=True,
         description=(

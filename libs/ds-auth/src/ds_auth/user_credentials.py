@@ -44,6 +44,7 @@ from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from fastapi import HTTPException
 
+from .address_guard import InternalAllowance
 from .did_web import (
     DidResolutionError,
     DidWebResolver,
@@ -61,12 +62,19 @@ _RESOLVER: DidWebResolver | None = None
 
 
 def get_resolver(
-    *, use_https: bool = True, ttl_seconds: float | None = None
+    *,
+    use_https: bool = True,
+    ttl_seconds: float | None = None,
+    allowance: InternalAllowance | None = None,
 ) -> DidWebResolver:
+    """The process-wide resolver. ``allowance`` is the service's ADR-0029
+    allowance (`<PREFIX>_DID_WEB_INTERNAL_HOSTS` / `_NETWORKS`); a service has
+    exactly one, so the first call's is the resolver's."""
     global _RESOLVER
     if _RESOLVER is None:
         _RESOLVER = DidWebResolver(
             use_https=use_https,
+            allowance=allowance,
             **({"ttl_seconds": ttl_seconds} if ttl_seconds is not None else {}),
         )
     return _RESOLVER
@@ -125,6 +133,7 @@ def verify_user_vc_jwt(
     trust_list_url: str | None = None,
     did_web_use_https: bool = True,
     did_cache_ttl_seconds: float | None = None,
+    did_web_allowance: InternalAllowance | None = None,
     expected_linked_participant: str | None = None,
     credential_status_path: str | None = None,
     credential_status_url: str | None = None,
@@ -191,7 +200,9 @@ def verify_user_vc_jwt(
             raise HTTPException(403, "User VC issuer is not trusted")
 
         resolver = resolver or get_resolver(
-            use_https=did_web_use_https, ttl_seconds=did_cache_ttl_seconds
+            use_https=did_web_use_https,
+            ttl_seconds=did_cache_ttl_seconds,
+            allowance=did_web_allowance,
         )
         try:
             document = resolver.resolve(trust_anchor_did)
@@ -271,7 +282,9 @@ def verify_user_vc_jwt(
             verify_signature=not insecure_dev,
             resolver=resolver
             or get_resolver(
-                use_https=did_web_use_https, ttl_seconds=did_cache_ttl_seconds
+                use_https=did_web_use_https,
+                ttl_seconds=did_cache_ttl_seconds,
+                allowance=did_web_allowance,
             ),
             ttl_seconds=status_cache_ttl_seconds,
         )

@@ -5,8 +5,10 @@ is an accepted consent collector for holder Y" lives here; the holder's connecto
 reads it before it accepts a consent registration from X's organisation token.
 
 - `POST /admin/consent-collectors`, `POST /admin/consent-collectors/revoke`,
-  `GET /admin/consent-collectors` — the anchor operator's surface, on
-  `identity-registry.collectors.write` (or `.admin`).
+  `POST /admin/consent-collectors/reinstate`, `GET /admin/consent-collectors` —
+  the anchor operator's surface, on `identity-registry.collectors.write` (or
+  `.admin`). Adding a revoked pair leaves it revoked (200, the row as it is);
+  only `reinstate` lifts a revocation.
 - `GET /consent-collectors/check` — one pair at a time, on
   `identity-registry.read`, which a connector's organisation client holds. The
   same split as `/admin/memberships` and `/memberships/check`: a connector asking
@@ -19,7 +21,7 @@ registry already sends); the TTL bounds staleness when the hint is lost.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
@@ -30,7 +32,11 @@ from ...dependencies import (
     require_admin_or_read_scope,
     require_collectors_write,
 )
-from ...schemas.requests import ConsentCollectorRequest, RevokeConsentCollectorRequest
+from ...schemas.requests import (
+    ConsentCollectorRequest,
+    ReinstateConsentCollectorRequest,
+    RevokeConsentCollectorRequest,
+)
 from ...schemas.responses import (
     ConsentCollectorCheckResponse,
     ConsentCollectorResponse,
@@ -49,7 +55,11 @@ def _to_response(row: ConsentCollector) -> ConsentCollectorResponse:
         created_at=row.created_at,
         updated_at=row.updated_at,
         revoked_at=row.revoked_at,
+        revoked_by=row.revoked_by,
         revocation_reason=row.revocation_reason,
+        reinstated_at=row.reinstated_at,
+        reinstated_by=row.reinstated_by,
+        reinstatement_reason=row.reinstatement_reason,
     )
 
 
@@ -60,17 +70,59 @@ def _to_response(row: ConsentCollector) -> ConsentCollectorResponse:
 )
 async def add_consent_collector(
     data: ConsentCollectorRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
     principal=Depends(require_collectors_write),
 ):
-    """Accept an organisation as a consent collector for a holder. Idempotent."""
+    """Accept an organisation as a consent collector for a holder. Idempotent.
+
+    201 when the pair is created, 200 when it already exists: in force, or
+    **revoked**, in which case it stays revoked and the body says by whom, when
+    and why. A re-add is what a declarative bootstrap does on every start, so it
+    neither revives a revocation nor fails; `POST …/reinstate` lifts one.
+    """
     try:
-        row = await collectors.add(
+        outcome = await collectors.add(
             db,
             holder_did=data.holder_did,
             collector_did=data.collector_did,
             added_by=getattr(principal, "subject", None),
+        )
+    except collectors.CollectorError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    row = outcome.row
+    if not outcome.created:
+        response.status_code = 200
+        return _to_response(row)
+    await db.commit()
+    await db.refresh(row)
+    await invalidate_participant_caches(settings)
+    return _to_response(row)
+
+
+@router.post(
+    "/admin/consent-collectors/reinstate",
+    response_model=ConsentCollectorResponse,
+)
+async def reinstate_consent_collector(
+    data: ReinstateConsentCollectorRequest,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    principal=Depends(require_collectors_write),
+):
+    """Lift a revocation, with a reason; who, when and why stay on the row.
+
+    The pair must meet the add's preconditions again (an active holder, a
+    verified collector). An active pair is answered as it is.
+    """
+    try:
+        row = await collectors.reinstate(
+            db,
+            holder_did=data.holder_did,
+            collector_did=data.collector_did,
+            reason=data.reason,
+            reinstated_by=getattr(principal, "subject", None),
         )
     except collectors.CollectorError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -88,7 +140,7 @@ async def revoke_consent_collector(
     data: RevokeConsentCollectorRequest,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    _principal=Depends(require_collectors_write),
+    principal=Depends(require_collectors_write),
 ):
     """Withdraw the acceptance. The row stays, marked revoked, with the reason.
 
@@ -102,6 +154,7 @@ async def revoke_consent_collector(
             holder_did=data.holder_did,
             collector_did=data.collector_did,
             reason=data.reason,
+            revoked_by=getattr(principal, "subject", None),
         )
     except collectors.CollectorError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

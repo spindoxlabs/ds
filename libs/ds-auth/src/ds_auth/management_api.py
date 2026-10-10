@@ -50,6 +50,17 @@ MANAGEMENT_API_SCOPES: tuple[str, ...] = (
     "management-api:transfers:write",
 )
 
+#: EDC-grammar reads the **ds connector** checks on an organisation token, which
+#: the organisation client may ask for without the write that would also satisfy
+#: them (`write` ⊇ `read`). `management-api:negotiations:read` is what
+#: `GET /consumer/requests` and `GET /consumer/negotiations/{id}` require — the
+#: same string EDC 0.18.0's `ContractNegotiationApiV5Controller` names in
+#: `@RequiredScope` — so an organisation lists its own consumer requests with a
+#: token that cannot negotiate. Not in `MANAGEMENT_API_SCOPES` (one entry per
+#: resource, at the strongest action) and so not in `EDC_TOKEN_SCOPE`: the
+#: connector's EDC never needs it.
+ORGANISATION_READ_SCOPES: tuple[str, ...] = ("management-api:negotiations:read",)
+
 #: Grants nothing: requesting it adds `EDC_MANAGEMENT_AUDIENCE` to the token
 #: (an audience mapper on the scope, `services/keycloak/clients.yaml`).
 EDC_MANAGEMENT_SCOPE = "edc.management"
@@ -196,6 +207,7 @@ ORGANISATION_CLIENT_OPTIONAL_SCOPES: tuple[str, ...] = (
     *MANAGEMENT_API_SCOPES,
     EDC_MANAGEMENT_SCOPE,
     *ORGANISATION_ACTION_SCOPES,
+    *ORGANISATION_READ_SCOPES,
 )
 
 #: The `scope` parameter of the connector's EDC token request. **Stated, not

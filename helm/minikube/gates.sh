@@ -8,8 +8,9 @@
 #
 #   helm/minikube/minikube.sh gates [gate...]     (configuration: minikube.sh's DS_MK_*)
 #
-# gates: helm-test t2.3 t2.4 t4.1 t5.1 t5.2 t5.3 t5.5 allowance render-negatives
-#        pod-negatives rotation; all (every gate, in this order)
+# gates: helm-test t2.3 t2.4 t4.1 t5.1 t5.2 t5.3 consumer-list t5.5 allowance
+#        allowance-services render-negatives pod-negatives rotation; all (every gate, in
+#        this order)
 #
 # Each check prints `PASS <gate>: <evidence>` or `FAIL <gate>: <evidence>` (a known gap
 # prints `GAP`); the exit code is the number of failures. The on-cluster negatives mutate
@@ -55,13 +56,11 @@ logs_of() {  # every container, current and previous, ANSI stripped
 
 # In the data-plane stand-in pod: MODE=<jwks|flow|query|pep> flow.py.
 flow() {
-  local mode=$1 ids="" extra=${2:-}
-  [ "$mode" = flow ] && ids=$($DS_MK_PG_EXEC -d "$CON_DB" -tAc \
-    "select coalesce(string_agg(id::text, ','), '') from consumer_access_requests where status in ('transferred','agreed','pending','requested','negotiating')" 2>/dev/null)
-  { sec "p[CON]['organisationClientSecret']"; echo; echo "$ids"; cat "$HERE/flow.py"; } \
+  local mode=$1 extra=${2:-}
+  { sec "p[CON]['organisationClientSecret']"; echo; cat "$HERE/flow.py"; } \
     | kubectl exec -i -n "$DPNS" deploy/ds-data-plane -- env MODE="$mode" EXPECT_X="$extra" \
         CONSUMER="$CON" PROVIDER="$PRO" DOMAIN="$DOMAIN" CONSUMER_NS="$NCON" PROVIDER_NS="$NPRO" python -c \
-      "import sys, os; os.environ['REC_ORG_SECRET'] = sys.stdin.readline().strip(); os.environ['REVOKE_IDS'] = sys.stdin.readline().strip(); exec(sys.stdin.read())" 2>&1
+      "import sys, os; os.environ['REC_ORG_SECRET'] = sys.stdin.readline().strip(); exec(sys.stdin.read())" 2>&1
 }
 
 # A pod-level negative: mutate, find the new pod's refusal, roll back.
@@ -138,25 +137,34 @@ gate_t2_3() {
 }
 
 gate_t2_4() {
-  local out empty
+  # The collector pair bootstrap.sh adds, and a revocation that survives it: revoke,
+  # restart the anchor (its bootstrap runs `collector add` again), still revoked; then
+  # the explicit reinstatement puts it back in force.
+  local out pod
+  local pair="--holder-did did:web:$PRO.$DOMAIN --collector-did did:web:$CON.$DOMAIN"
   out=$(kubectl exec -n "$AUTH" deploy/ds-identity-registry -c identity-registry -- ir-cli collector list 2>&1)
   grep -q "did:web:$CON.$DOMAIN → did:web:$PRO.$DOMAIN  active" <<<"$out" \
     && pass t2.4 "collector pair from bootstrap.sh active" || fail t2.4 "$out"
-  # Red: revoke, empty bootstrap.sh, restart: the pair must not come back active.
+  # shellcheck disable=SC2086
   kubectl exec -n "$AUTH" deploy/ds-identity-registry -c identity-registry -- ir-cli collector revoke \
-    --holder-did did:web:$PRO.$DOMAIN --collector-did did:web:$CON.$DOMAIN --reason "gate T2.4 red case" >/dev/null
-  empty=$(mktemp)
-  kubectl create configmap ds-seed -n "$AUTH" --from-file=agreements.yaml="$B/seed/agreements.yaml" \
-    --from-file=participation-en.md="$B/seed/content/participation-en.md" --from-file=owners.yaml="$B/seed/owners.yaml" \
-    --from-file=bootstrap.sh="$empty" --dry-run=client -o yaml | kubectl apply -f - >/dev/null; rm -f "$empty"
+    $pair --reason "gate T2.4: the agreement ended" --by gate-t2.4 >/dev/null
   kubectl rollout restart -n "$AUTH" deploy/ds-identity-registry >/dev/null
   kubectl rollout status -n "$AUTH" deploy/ds-identity-registry --timeout=300s >/dev/null
-  out=$(kubectl exec -n "$AUTH" "$(newest_pod "$AUTH" ds-identity-registry)" -c identity-registry -- ir-cli collector list 2>&1)
-  grep -q "  active" <<<"$out" && fail "t2.4 red" "pair active with an empty bootstrap.sh" || pass "t2.4 red" "$(echo $out)"
-  "$HERE/minikube.sh" configmaps >/dev/null
-  has "  active" "$HERE/minikube.sh" collectors \
-    && pass "t2.4 restored" "bootstrap.sh back; the restart re-activated the pair (a revocation must also leave bootstrap.sh)" \
-    || fail "t2.4 restored" "pair not active after restore"
+  pod=$(newest_pod "$AUTH" ds-identity-registry)
+  out=$(kubectl exec -n "$AUTH" "$pod" -c identity-registry -- ir-cli collector list 2>&1)
+  if grep -q "did:web:$CON.$DOMAIN → did:web:$PRO.$DOMAIN  revoked" <<<"$out" \
+    && has "Consent collector revoked, left unchanged: .*revoked by gate-t2.4 at .*the agreement ended" \
+      kubectl logs -n "$AUTH" "$pod" -c bootstrap; then
+    pass "t2.4 revoked survives restart" "after the anchor restart the pair is still revoked; bootstrap: $(kubectl logs -n "$AUTH" "$pod" -c bootstrap | grep -o 'Consent collector revoked, left unchanged.*' | cut -c1-200)"
+  else fail "t2.4 revoked survives restart" "$(echo $out)"; fi
+  # shellcheck disable=SC2086
+  out=$(kubectl exec -n "$AUTH" deploy/ds-identity-registry -c identity-registry -- ir-cli collector reinstate \
+    $pair --reason "gate T2.4: renewed" --by gate-t2.4 2>&1)
+  if grep -q "reinstated" <<<"$out" \
+    && has "did:web:$CON.$DOMAIN → did:web:$PRO.$DOMAIN  active" \
+      kubectl exec -n "$AUTH" deploy/ds-identity-registry -c identity-registry -- ir-cli collector list; then
+    pass "t2.4 reinstate" "ir-cli collector reinstate: active again ($out)"
+  else fail "t2.4 reinstate" "$out"; fi
 }
 
 gate_t4_1() {
@@ -297,6 +305,77 @@ gate_t5_5() {
   has "Withdrew dataset datasets.gold.om_weather_features" kubectl logs -n "$NPRO" deploy/ds-connector-$PRO -c connector \
     && has "catalogue: 1 asset\(s\); governance exposes 1" helm_test "$NPRO" ds-connector-$PRO \
     && pass "t5.5 revert" "governance reverted: the sync withdrew the extra asset, catalogue 1" || fail "t5.5 revert" "catalogue not back to 1"
+}
+
+gate_consumer_list() {
+  # The organisation lists its own consumer requests with `negotiations:read` alone
+  # (ds_auth.ORGANISATION_READ_SCOPES, synced into the realm); red: no negotiation
+  # scope is refused, and the read-only token cannot negotiate. A repeated negotiation
+  # answers 409 naming the request_id the revoke route takes. Runs after t5.3.
+  local out
+  out=$(flow list); echo "$out" | grep -v '^RESULT' | sed 's/^/  /'
+  grep -q "RESULT list PASS" <<<"$out" && pass consumer-list "$(grep -o 'PASS .*' <<<"$out" | cut -c6-)" \
+    || fail consumer-list "$(grep RESULT <<<"$out")"
+}
+
+gate_allowance_services() {
+  # ADR-0029, extended: the connector, provenance and the EDC fetch did:web behind the
+  # same guard. With the deployment's allowance a person route's issuer and the DCP
+  # counterparty resolve (t5.3's flow passes, the logs say the allowance is active);
+  # without it each refuses the node's private address.
+  local ip out logs
+  ip=$(minikube -p "$DS_MK_PROFILE" ip)
+  for rel in ds-connector-$CON ds-provenance-$CON; do
+    has "did:web internal allowance active: hosts under .$DOMAIN may resolve to $ip/32" kubectl logs -n "$NCON" deploy/$rel \
+      && pass "allowance $rel" "start log: did:web internal allowance active ($ip/32)" \
+      || fail "allowance $rel" "no allowance line in the log"
+  done
+  has "did:web internal allowance active: hosts under .$DOMAIN may resolve to $ip/32" kubectl logs -n "$NCON" deploy/ds-edc-$CON \
+    && pass "allowance ds-edc-$CON" "start log: did:web internal allowance active ($ip/32)" \
+    || fail "allowance ds-edc-$CON" "no allowance line in the EDC log"
+  # Connector/provenance resolver, in the pod, without the allowance (dev=False, as the
+  # pod runs) and with the pod's own settings: refused, then admitted (dialled).
+  for rel in ds-connector-$CON ds-provenance-$CON; do
+    out=$(kubectl exec -n "$NCON" deploy/$rel -- python -c "
+import os
+from ds_auth.address_guard import InternalAllowance
+from ds_auth.did_web import DidWebResolver, DidResolutionError
+did = 'did:web:trust-anchor.$DOMAIN'
+pfx = 'CONNECTOR_' if 'connector' in '$rel' else 'PROVENANCE_'
+allow = InternalAllowance.parse(os.environ.get(pfx + 'DID_WEB_INTERNAL_HOSTS', ''), os.environ.get(pfx + 'DID_WEB_INTERNAL_NETWORKS', ''))
+try:
+    DidWebResolver(dev=False).resolve(did); print('without: RESOLVED')
+except DidResolutionError as e:
+    print('without:', e)
+try:
+    doc = DidWebResolver(dev=False, allowance=allow).resolve(did); print('with: RESOLVED', doc['id'])
+except DidResolutionError as e:
+    print('with:', e)
+" 2>&1)
+    if grep -q "without: .*non-public address ($ip)" <<<"$out" && grep -q "with: RESOLVED did:web:trust-anchor.$DOMAIN" <<<"$out"; then
+      pass "allowance $rel fetch" "without: $(grep -o 'resolves to a non-public address ([^)]*)' <<<"$out" | head -1); with: $(grep -o 'RESOLVED did:web:[^ ]*' <<<"$out")"
+    else fail "allowance $rel fetch" "$(tr '\n' ' ' <<<"$out" | cut -c1-300)"; fi
+  done
+  # The EDC: drop the provider EDC's allowance (its ConfigMap property) and roll. The
+  # provider resolves the consumer's DID to verify its token, so the consumer's flow is
+  # refused at the first DSP call and the provider EDC logs the refusal. Restore.
+  local cm=ds-edc-$PRO before
+  before=$(kubectl get configmap "$cm" -n "$NPRO" -o json | jq 'del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.managedFields)')
+  jq '.data["edc.properties"] |= (split("\n") | map(select(startswith("ds.did.web.internal") | not)) | join("\n"))' <<<"$before" \
+    | kubectl apply -f - >/dev/null
+  kubectl rollout restart -n "$NPRO" deploy/ds-edc-$PRO >/dev/null
+  kubectl rollout status -n "$NPRO" deploy/ds-edc-$PRO --timeout=300s >/dev/null
+  out=$(flow flow)
+  logs=$(kubectl logs -n "$NPRO" deploy/ds-edc-$PRO --since=5m 2>&1)
+  if ! grep -q "RESULT flow PASS" <<<"$out" && grep -qE "resolves to a non-public address \($ip\)" <<<"$logs"; then
+    pass "allowance ds-edc-$PRO red" "without the allowance: flow refused ($(grep RESULT <<<"$out" | cut -c1-120)); EDC: '$(grep -oE "[^ ]+ resolves to a non-public address \($ip\)" <<<"$logs" | head -1)'"
+  else fail "allowance ds-edc-$PRO red" "$(grep RESULT <<<"$out") / no refusal in the EDC log"; fi
+  kubectl apply -f - <<<"$before" >/dev/null
+  kubectl rollout restart -n "$NPRO" deploy/ds-edc-$PRO >/dev/null
+  kubectl rollout status -n "$NPRO" deploy/ds-edc-$PRO --timeout=300s >/dev/null
+  out=$(flow flow)
+  grep -q "RESULT flow PASS" <<<"$out" && pass "allowance ds-edc-$PRO restored" "flow passes again" \
+    || fail "allowance ds-edc-$PRO restored" "$(grep RESULT <<<"$out")"
 }
 
 gate_allowance() {
@@ -452,7 +531,7 @@ open(p, 'w').write(head + yaml.safe_dump(d, sort_keys=False))"
 }
 
 for g in "$@"; do
-  [ "$g" = all ] && set -- helm-test t2.3 t2.4 t4.1 t5.1 t5.2 t5.3 t5.5 allowance render-negatives pod-negatives rotation && break
+  [ "$g" = all ] && set -- helm-test t2.3 t2.4 t4.1 t5.1 t5.2 t5.3 consumer-list t5.5 allowance allowance-services render-negatives pod-negatives rotation && break
 done
 for g in "$@"; do
   echo; echo "######## $g ($(date -u +%T)Z)"

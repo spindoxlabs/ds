@@ -173,11 +173,21 @@ async def start_negotiation(
         raise HTTPException(422, "declared_from is after declared_until")
     duplicate = await _find_blocking_request(db, svc, x_subject_id, req.asset_id)
     if duplicate:
+        # Each id under its own name. This said `id=`, which was a negotiation id
+        # or, behind an active transfer, a transfer id — never the request id
+        # `POST /consumer/requests/{request_id}/revoke` takes.
+        ids = ", ".join(
+            f"{name}={duplicate[name]}"
+            for name in ("request_id", "negotiation_id", "transfer_id")
+            if duplicate.get(name)
+        )
         raise HTTPException(
             409,
             (
                 f"Access for asset {req.asset_id!r} was already requested by this user "
-                f"(status={duplicate['status']}, id={duplicate['id']})."
+                f"(status={duplicate['status']}{', ' + ids if ids else ''}). "
+                "To request it again, revoke the earlier request: "
+                "POST /consumer/requests/{request_id}/revoke."
             ),
         )
     try:
@@ -913,9 +923,21 @@ async def _find_blocking_request(
     subject_id: str,
     asset_id: str,
 ) -> dict | None:
+    """The earlier request that blocks a new one, with every id it is known by.
+
+    ``request_id`` is the ledger row (what the revoke route takes);
+    ``negotiation_id`` and ``transfer_id`` are EDC's. An active transfer blocks
+    too, and is reported with the request it belongs to.
+    """
     transfer_id = await _find_blocking_transfer(db, svc, subject_id, asset_id)
     if transfer_id:
-        return {"id": transfer_id, "status": "active-transfer"}
+        request = await _request_for_transfer(db, subject_id, asset_id, transfer_id)
+        return {
+            "status": "active-transfer",
+            "request_id": request.id if request else None,
+            "negotiation_id": request.negotiation_id if request else None,
+            "transfer_id": transfer_id,
+        }
 
     result = await db.execute(
         select(ConsumerAccessRequestORM)
@@ -932,7 +954,48 @@ async def _find_blocking_request(
     request = result.scalar_one_or_none()
     if not request:
         return None
-    return {"id": request.negotiation_id or request.id, "status": request.status}
+    return {
+        "status": request.status,
+        "request_id": request.id,
+        "negotiation_id": request.negotiation_id,
+        "transfer_id": request.transfer_id,
+    }
+
+
+async def _request_for_transfer(
+    db: AsyncSession, subject_id: str, asset_id: str, transfer_id: str
+) -> ConsumerAccessRequestORM | None:
+    """The access request a transfer belongs to: by transfer id, by the transfer's
+    agreement, or else this subject's latest request for the asset."""
+    transfer = (
+        await db.execute(
+            select(ConsumerTransferORM).where(
+                ConsumerTransferORM.transfer_id == transfer_id
+            )
+        )
+    ).scalar_one_or_none()
+    mine = (
+        ConsumerAccessRequestORM.subject_id == subject_id,
+        ConsumerAccessRequestORM.asset_id == asset_id,
+    )
+    candidates = [ConsumerAccessRequestORM.transfer_id == transfer_id]
+    if transfer is not None and transfer.contract_agreement_id:
+        candidates.append(
+            ConsumerAccessRequestORM.contract_agreement_id
+            == transfer.contract_agreement_id
+        )
+    for condition in (*candidates, None):
+        stmt = select(ConsumerAccessRequestORM).where(*mine)
+        if condition is not None:
+            stmt = stmt.where(condition)
+        found = (
+            await db.execute(
+                stmt.order_by(desc(ConsumerAccessRequestORM.created_at)).limit(1)
+            )
+        ).scalar_one_or_none()
+        if found is not None:
+            return found
+    return None
 
 
 async def _find_blocking_transfer(

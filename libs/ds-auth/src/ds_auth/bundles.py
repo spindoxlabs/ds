@@ -52,7 +52,7 @@ import json
 import logging
 from collections.abc import Iterable, Mapping
 
-from .management_api import MANAGEMENT_API_SCOPES
+from .management_api import MANAGEMENT_API_SCOPES, ORGANISATION_READ_SCOPES
 
 logger = logging.getLogger(__name__)
 
@@ -273,6 +273,7 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         # grammar — and granted to organisation clients only, never to a person
         # and never through a bundle (`management_api.py`).
         *MANAGEMENT_API_SCOPES,
+        *ORGANISATION_READ_SCOPES,
     }
 )
 

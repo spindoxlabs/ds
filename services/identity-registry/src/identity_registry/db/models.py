@@ -632,7 +632,10 @@ class ConsentCollector(Base):
     **Revocation marks, never deletes** — the same rule as the trust list. A
     consent row names the collector that registered it, and a relation that
     vanished would leave that evidence pointing at nothing anyone can explain.
-    Adding a revoked pair again reactivates the row.
+    **A revocation survives a re-add** (the anchor's bootstrap runs `collector add`
+    on every start): adding a revoked pair leaves it revoked. Lifting it is the
+    explicit `reinstate`, recorded here as who, when and why; the revocation it
+    lifted stays on the row as history until the next one replaces it.
     """
 
     __tablename__ = "consent_collectors"
@@ -652,3 +655,9 @@ class ConsentCollector(Base):
         DateTime(timezone=True), nullable=True
     )
     revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reinstated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reinstated_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reinstatement_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

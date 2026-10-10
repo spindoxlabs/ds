@@ -31,6 +31,9 @@ dependencies = [
     "cryptography>=42",
     "fastapi>=0.115",
     "httpx>=0.27",
+    # address_guard dials through its own httpcore network backend (the
+    # connect-time address check), the one httpx builds on.
+    "httpcore>=1.0",
 ]
 
 [project.optional-dependencies]
