@@ -67,7 +67,7 @@ dependencies {
     testImplementation("org.eclipse.edc:http-lib:$edcVersion")
     testImplementation("dev.failsafe:failsafe:3.3.2")
     // HTTP client for consent check
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
     // Matches (or exceeds) the jackson EDC's own BOMs resolve to at runtime
     // (2.22.x at 0.18.0); 2.17.0 was the version this module compiled and
     // tested against while the packaged connector ran 2.22.
