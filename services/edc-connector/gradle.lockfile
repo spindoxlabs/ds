@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :edc-connector:dependencies --write-locks
 com.apicatalog:carbon-did:0.3.0=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:copper-multibase:0.5.0=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:copper-multicodec:0.1.1=runtimeClasspath,testRuntimeClasspath
@@ -288,14 +289,15 @@ org.glassfish:jakarta.json:2.0.1=runtimeClasspath,testRuntimeClasspath
 org.javassist:javassist:3.30.2-GA=runtimeClasspath,testRuntimeClasspath
 org.jetbrains.kotlin:kotlin-stdlib:2.2.21=runtimeClasspath,testRuntimeClasspath
 org.jetbrains:annotations:26.1.0=runtimeClasspath,testRuntimeClasspath
-org.junit.jupiter:junit-jupiter-api:5.10.2=testCompileClasspath,testRuntimeClasspath
-org.junit.jupiter:junit-jupiter-engine:5.10.2=testRuntimeClasspath
-org.junit.jupiter:junit-jupiter-params:5.10.2=testCompileClasspath,testRuntimeClasspath
-org.junit.jupiter:junit-jupiter:5.10.2=testCompileClasspath,testRuntimeClasspath
-org.junit.platform:junit-platform-commons:1.10.2=testCompileClasspath,testRuntimeClasspath
-org.junit.platform:junit-platform-engine:1.10.2=testRuntimeClasspath
-org.junit.platform:junit-platform-launcher:1.10.2=testRuntimeClasspath
-org.junit:junit-bom:5.10.2=testCompileClasspath,testRuntimeClasspath
+org.jspecify:jspecify:1.0.0=testCompileClasspath
+org.junit.jupiter:junit-jupiter-api:6.1.3=testCompileClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter-engine:6.1.3=testRuntimeClasspath
+org.junit.jupiter:junit-jupiter-params:6.1.3=testCompileClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter:6.1.3=testCompileClasspath,testRuntimeClasspath
+org.junit.platform:junit-platform-commons:6.1.3=testCompileClasspath,testRuntimeClasspath
+org.junit.platform:junit-platform-engine:6.1.3=testRuntimeClasspath
+org.junit.platform:junit-platform-launcher:6.1.3=testRuntimeClasspath
+org.junit:junit-bom:6.1.3=testCompileClasspath,testRuntimeClasspath
 org.jvnet.mimepull:mimepull:1.9.15=runtimeClasspath,testRuntimeClasspath
 org.opentest4j:opentest4j:1.3.0=testCompileClasspath,testRuntimeClasspath
 org.postgresql:postgresql:42.7.13=runtimeClasspath,testRuntimeClasspath

@@ -169,7 +169,7 @@ dependencies {
     // what it can get wrong is the *assembly* — which modules are packaged, and
     // whether the configuration handed to the result is configuration the result
     // reads. Both fail silently at runtime. See RuntimeContractTest.
-    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
