@@ -6,7 +6,7 @@
 #
 # Rebuild only when build.gradle.kts files or edcVersion change.
 
-FROM gradle:8.12-jdk21
+FROM gradle:9.7-jdk21
 
 WORKDIR /cache
 
