@@ -1,5 +1,5 @@
 # Build context: repo root
-FROM node:22-alpine AS builder
+FROM node:25-alpine AS builder
 WORKDIR /app
 
 # Install deps (layer-cached)
@@ -13,7 +13,7 @@ COPY services/portal/tsconfig.json    ./
 
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 LABEL org.opencontainers.image.description="ds-portal — SvelteKit data governance portal"
 
 WORKDIR /app
