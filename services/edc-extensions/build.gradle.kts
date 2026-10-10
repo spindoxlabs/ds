@@ -89,7 +89,7 @@ dependencies {
     testImplementation("org.eclipse.edc:json-ld-spi:$edcVersion")
     testImplementation("org.eclipse.edc:transform-spi:$edcVersion")
     testImplementation("org.eclipse.edc:sql-bootstrapper:$edcVersion")
-    testRuntimeOnly("org.eclipse.parsson:parsson:1.1.5")
+    testRuntimeOnly("org.eclipse.parsson:parsson:1.1.9")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
