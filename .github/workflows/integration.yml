@@ -109,14 +109,14 @@ jobs:
       EDC_EXTENSIONS_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true
 
-      - uses: go-task/setup-task@v1
+      - uses: go-task/setup-task@v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -154,7 +154,7 @@ jobs:
       KEYCLOAK_ADMIN_PASSWORD: admin
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Not a `services:` container: it needs the committed realm file mounted,
       # and service containers start *before* the checkout that would provide
@@ -222,12 +222,12 @@ jobs:
                --overlay /app/clients.energy.yaml \
                --secrets-file /tmp/.secrets.yaml'
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true
 
-      - uses: go-task/setup-task@v1
+      - uses: go-task/setup-task@v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
