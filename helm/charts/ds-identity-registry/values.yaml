@@ -106,6 +106,22 @@ credentialTtl:
 
 # DCP credential-service presentation query. Internal by default — the holder
 # self-presents. Enable only if remote verifiers query it directly.
+# ── did:web internal allowance (ADR-0029) ─────────────────────────────────────
+# Under DS_ENV=production this registry dials only public addresses when it fetches a
+# did:web document or delivers a credential. Where the cluster resolves the
+# dataspace's own hosts to a private address (split-horizon DNS answering the node's
+# address, an in-cluster ingress range), list those hosts' suffixes AND the networks
+# they may resolve to; both or neither, the render fails otherwise. Link-local,
+# multicast, reserved and unspecified addresses stay refused, and any other host is
+# unaffected. Empty (the default): public resolution only.
+# Set it under authority.identityRegistry.didWeb in a deployment's values: the
+# helmfile forwards that one block to every registry release.
+#   internalHosts: [.ds.example.org]
+#   internalNetworks: [192.168.1.10/32]        # or an IPv4/IPv6 range of any prefix
+didWeb:
+  internalHosts: []
+  internalNetworks: []
+
 credentialService:
   expose: false
 

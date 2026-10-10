@@ -21,8 +21,10 @@ import asyncio
 import ipaddress
 import json
 import logging
+import re
 import socket
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote
 
@@ -59,10 +61,99 @@ class DidResolutionError(Exception):
 # multicast, reserved and unspecified addresses are refused in every posture.
 
 
+#: A host suffix: a leading dot, then at least two DNS labels (`.ds.example.org`).
+#: One label (`.org`) would admit a whole top-level domain.
+_SUFFIX = re.compile(r"^(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?){2,}$")
+
+
+@dataclass(frozen=True)
+class InternalAllowance:
+    """The dataspace's own hosts, and the private networks they may resolve to.
+
+    ADR-0029. A deployment whose cluster DNS answers its own `*.<baseDomain>` with a
+    private address (split horizon, an in-cluster proxy) names those hosts' suffixes
+    **and** the networks: only a host under a listed suffix, resolving into a listed
+    network, gets a private address admitted. Link-local (metadata), multicast,
+    reserved and unspecified addresses stay refused for every host, and every host
+    outside the suffixes is treated exactly as without the allowance. Empty by
+    default; a half-configured or over-broad allowance is refused at load.
+    """
+
+    suffixes: tuple[str, ...] = ()
+    networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.suffixes)
+
+    @classmethod
+    def parse(cls, hosts: str, networks: str) -> InternalAllowance:
+        host_items = [h.strip().lower().rstrip(".") for h in (hosts or "").split(",") if h.strip()]
+        net_items = [n.strip() for n in (networks or "").split(",") if n.strip()]
+        if not host_items and not net_items:
+            return cls()
+        if not host_items or not net_items:
+            raise ValueError(
+                "did:web internal allowance: set both the host suffixes and the "
+                "networks they may resolve to, or neither"
+            )
+        suffixes = []
+        for h in host_items:
+            suffix = h if h.startswith(".") else f".{h}"
+            if not _SUFFIX.match(suffix):
+                raise ValueError(
+                    f"did:web internal allowance: {h!r} is not a host suffix of at "
+                    "least two DNS labels (e.g. .ds.example.org)"
+                )
+            suffixes.append(suffix)
+        nets = []
+        for n in net_items:
+            try:
+                net = ipaddress.ip_network(n, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"did:web internal allowance: {n!r} is not a network") from exc
+            if (
+                net.prefixlen == 0
+                or not net.is_private
+                or net.is_link_local
+                or net.is_loopback
+                or net.is_multicast
+                or net.is_unspecified
+                or net.overlaps(ipaddress.ip_network("169.254.0.0/16" if net.version == 4 else "fe80::/10"))
+            ):
+                raise ValueError(
+                    f"did:web internal allowance: network {n!r} is not a private "
+                    "network this allowance may name (no default route, public, "
+                    "link-local, loopback or multicast range)"
+                )
+            nets.append(net)
+        return cls(tuple(suffixes), tuple(nets))
+
+    @classmethod
+    def from_settings(cls, settings: Any) -> InternalAllowance:
+        return cls.parse(
+            getattr(settings, "did_web_internal_hosts", "") or "",
+            getattr(settings, "did_web_internal_networks", "") or "",
+        )
+
+    def admits(self, host: str, ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+        name = host.lower().rstrip(".")
+        return any(name.endswith(s) for s in self.suffixes) and any(ip in n for n in self.networks)
+
+    def describe(self) -> str:
+        return (
+            f"hosts under {', '.join(self.suffixes)} may resolve to "
+            f"{', '.join(str(n) for n in self.networks)}"
+        )
+
+
 def _address_refusal(
-    ip: ipaddress.IPv4Address | ipaddress.IPv6Address, *, dev: bool
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    *,
+    dev: bool,
+    host: str = "",
+    allowance: InternalAllowance | None = None,
 ) -> str | None:
-    """Why *ip* may not be dialled, or ``None`` when it may."""
+    """Why *ip* may not be dialled for *host*, or ``None`` when it may."""
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
     if (
@@ -76,10 +167,18 @@ def _address_refusal(
         return None
     if dev and (ip.is_private or ip.is_loopback):
         return None
+    if allowance and allowance.admits(host, ip):
+        return None
     return "a non-public address"
 
 
-def admitted_address(host: str, addresses: Iterable[str], *, dev: bool) -> str:
+def admitted_address(
+    host: str,
+    addresses: Iterable[str],
+    *,
+    dev: bool,
+    allowance: InternalAllowance | None = None,
+) -> str:
     """The address to dial for *host*, given everything it resolved to.
 
     **Every** address must be admissible, not just the first: a name that
@@ -89,7 +188,7 @@ def admitted_address(host: str, addresses: Iterable[str], *, dev: bool) -> str:
     chosen: str | None = None
     for raw in addresses:
         ip = ipaddress.ip_address(raw.split("%", 1)[0])
-        reason = _address_refusal(ip, dev=dev)
+        reason = _address_refusal(ip, dev=dev, host=host, allowance=allowance)
         if reason:
             raise DidResolutionError(f"{host} resolves to {reason} ({ip})")
         chosen = chosen or str(ip)
@@ -110,8 +209,9 @@ class _AdmittedAddressBackend(httpcore.AsyncNetworkBackend):
     hostname from the request, not from what was connected to.
     """
 
-    def __init__(self, *, dev: bool) -> None:
+    def __init__(self, *, dev: bool, allowance: InternalAllowance | None = None) -> None:
         self._dev = dev
+        self._allowance = allowance
         self._inner = httpcore.AnyIOBackend()
 
     async def connect_tcp(
@@ -128,7 +228,7 @@ class _AdmittedAddressBackend(httpcore.AsyncNetworkBackend):
         except (OSError, TimeoutError) as exc:
             raise httpcore.ConnectError(f"cannot resolve {host}: {exc}") from exc
         try:
-            address = admitted_address(host, addresses, dev=self._dev)
+            address = admitted_address(host, addresses, dev=self._dev, allowance=self._allowance)
         except DidResolutionError as exc:
             raise httpcore.ConnectError(str(exc)) from exc
         return await self._inner.connect_tcp(
@@ -148,7 +248,9 @@ class _AdmittedAddressBackend(httpcore.AsyncNetworkBackend):
         await self._inner.sleep(seconds)
 
 
-def outbound_transport(*, dev: bool | None = None) -> httpx.AsyncBaseTransport:
+def outbound_transport(
+    *, dev: bool | None = None, allowance: InternalAllowance | None = None
+) -> httpx.AsyncBaseTransport:
     """An httpx transport that only dials admissible addresses.
 
     For every request to an address a counterparty chose: DID documents here,
@@ -159,13 +261,17 @@ def outbound_transport(*, dev: bool | None = None) -> httpx.AsyncBaseTransport:
     """
     if dev is None:
         dev = not is_production()
+    if allowance is None:
+        from ..config import get_settings
+
+        allowance = InternalAllowance.from_settings(get_settings())
     transport = httpx.AsyncHTTPTransport(trust_env=False, retries=0)
     # httpx builds its pool with the default network backend and offers no
     # argument for another one, so the pool is rebuilt with the same TLS
     # context and this backend.
     transport._pool = httpcore.AsyncConnectionPool(
         ssl_context=httpx.create_ssl_context(trust_env=False),
-        network_backend=_AdmittedAddressBackend(dev=dev),
+        network_backend=_AdmittedAddressBackend(dev=dev, allowance=allowance),
         retries=0,
     )
     return transport

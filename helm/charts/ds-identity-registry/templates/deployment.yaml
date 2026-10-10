@@ -71,8 +71,13 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          # The shared helper, as every other container here: the namespace enforces
+          # Pod Security `restricted`, which refuses a container without it, and the
+          # refusal is only a ReplicaSet event (found by the first cluster install).
           securityContext:
-            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
         {{- end }}
         {{- if and .Values.bootstrap.enabled (eq (include "ir.role" .) "trust-anchor") }}
         # Trust anchor + seed data. Every ir-cli command has upsert semantics,

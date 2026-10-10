@@ -11,6 +11,7 @@ from .config import (
     get_settings,
     register_database_url,
     register_encryption_key,
+    register_participant_sts_secret,
     register_service_client_secret,
 )
 from .db.engine import verify_schema
@@ -89,13 +90,7 @@ async def lifespan(app: FastAPI):
     # over a credential that authenticates nothing (`KEYCLOAK_CLIENT_SECRET`,
     # which this service has already been through once).
     if settings.role == PARTICIPANT:
-        guard.forbid_default(
-            "IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET",
-            settings.participant_sts_secret,
-            {"insecure-dev-secret"},
-            "Set the secret this participant's own connector presents to its "
-            "own STS. It is yours to choose — the trust anchor never mints one.",
-        )
+        register_participant_sts_secret(guard, settings)
     # Every check above reads configuration only. In production a violation
     # refuses *here*, before `verify_schema` opens the first connection — the
     # dev database default names whichever stack publishes that port, and the
@@ -107,6 +102,13 @@ async def lifespan(app: FastAPI):
     guard.enforce()
 
     await _warn_on_duplicate_status_list_indices()
+
+    # ADR-0029: a widened outbound boundary is said out loud at every start.
+    from .services.did_resolver import InternalAllowance
+
+    allowance = InternalAllowance.from_settings(settings)
+    if allowance:
+        log.warning("did:web internal allowance active: %s", allowance.describe())
 
     yield
 

@@ -1,0 +1,45 @@
+# The ds clients into the bundled realm, with the generated secrets (Secret
+# `keycloak-sync-env`, written by minikube.sh realm): every file that declares the
+# realm, as ds's compose stack syncs it (clients.dataspaces.yaml as the base, clients.yaml
+# and the energy overlay), plus this environment's organisation and collector clients.
+# ENV=dev only because the base files' other clients keep their dev secrets; every client
+# this environment uses gets a generated one.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-sync
+  namespace: ${NAMESPACE}
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: sync
+          image: ${SYNC_IMAGE}
+          command: ["sh", "-c"]
+          # As ds's compose stack: bootstrap (the realm's platform level, which sync
+          # requires), then sync. Admin credentials from the environment, not argv.
+          args:
+            - >-
+              celine-policies keycloak bootstrap --admin-user "$KEYCLOAK_ADMIN_USERNAME"
+              --admin-password "$KEYCLOAK_ADMIN_PASSWORD" &&
+              celine-policies keycloak sync /clients/clients.dataspaces.yaml
+              --overlay /clients/clients.yaml --overlay /clients/clients.energy.yaml
+              --overlay /clients/clients.organisations.yaml
+              --admin-user "$KEYCLOAK_ADMIN_USERNAME" --admin-password "$KEYCLOAK_ADMIN_PASSWORD"
+              --secrets-file /tmp/.secrets.yaml
+          envFrom:
+            - secretRef: {name: keycloak-sync-env}
+          env:
+            - {name: CELINE_KEYCLOAK_BASE_URL, value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080"}
+            - {name: CELINE_KEYCLOAK_REALM, value: dataspaces}
+            - {name: CELINE_KEYCLOAK_SECRETS_FILE, value: /tmp/.secrets.yaml}
+            - {name: ENV, value: dev}
+            - {name: CELINE_KEYCLOAK_PLATFORM_LOGIN_THEME, value: "null"}
+            - {name: CELINE_KEYCLOAK_PLATFORM_EMAIL_THEME, value: "null"}
+          volumeMounts:
+            - {name: clients, mountPath: /clients, readOnly: true}
+      volumes:
+        - name: clients
+          configMap: {name: keycloak-clients}

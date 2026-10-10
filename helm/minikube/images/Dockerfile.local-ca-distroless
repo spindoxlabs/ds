@@ -1,0 +1,12 @@
+# The same CA addition as Dockerfile.local-ca, for an upstream distroless image with no
+# shell: ds-oauth2-proxy runs quay.io/oauth2-proxy/oauth2-proxy, whose chart sets no
+# image or env, and its OIDC discovery at the local realm must trust the CA (Go reads
+# /etc/ssl/certs/ca-certificates.crt). Loaded into the local node under the upstream
+# reference only; never pushed.
+ARG BASE
+FROM alpine:3.20 AS bundle
+COPY ca.crt /local-ca.crt
+RUN apk add --no-cache ca-certificates >/dev/null \
+ && cat /etc/ssl/certs/ca-certificates.crt /local-ca.crt > /bundle.crt
+FROM ${BASE}
+COPY --from=bundle /bundle.crt /etc/ssl/certs/ca-certificates.crt

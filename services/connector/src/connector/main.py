@@ -9,7 +9,7 @@ from ds.governance.models import profile_path_is_missing
 from ds.governance.owners import HttpOwnersRegistry
 from ds_auth import EDC_TOKEN_SCOPE
 from ds_auth.person_binding import IdentityRegistryLoginBinding, person_token_required
-from ds_auth.production import ProductionGuard, is_production
+from ds_auth.production import ProductionGuard, is_production, is_weak
 from ds_auth.service_token import ServiceTokenProvider
 from ds_obs import configure_logging, install_metrics, install_tracing
 from fastapi import FastAPI
@@ -182,14 +182,20 @@ async def lifespan(app: FastAPI):
     # The keys that seal a subject's data keys and every stored EDR at rest
     # (`db/sealed.py`). The dev values are committed, so a deployment still on
     # them keeps ciphertext anyone with the repository can open.
+    # A placeholder is refused too: the key-index secret is any string, so unlike a
+    # placeholder at-rest key (which the Fernet parse below refuses) nothing else
+    # would stop `CHANGE_ME` here.
     for name, value, dev in (
         ("CONNECTOR_AT_REST_KEYS", settings.at_rest_keys, DEV_AT_REST_KEY),
         ("CONNECTOR_KEY_INDEX_SECRET", settings.key_index_secret, DEV_KEY_INDEX_SECRET),
     ):
-        if dev in parse_keys(value):
+        keys = parse_keys(value)
+        if dev in keys or any(is_weak(k) for k in keys):
             guard.add(
                 name,
-                "holds the committed dev value",
+                "holds the committed dev value"
+                if dev in keys
+                else "is a placeholder or trivially weak value",
                 "Generate a Fernet key for CONNECTOR_AT_REST_KEYS and a random "
                 "CONNECTOR_KEY_INDEX_SECRET (openssl rand -hex 32); losing either "
                 "loses the sealed columns.",

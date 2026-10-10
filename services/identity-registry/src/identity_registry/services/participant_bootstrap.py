@@ -48,7 +48,9 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import Settings
+from ds_auth.production import ProductionGuard, is_production
+
+from ..config import Settings, register_participant_sts_secret
 from ..db.models import Credential, Did, Key, Participant
 from .crypto import encrypt_private_jwk, generate_key_pair, hash_sts_secret
 from .enrolment import CREDENTIAL_SERVICE_TYPE, DSP_ENDPOINT_TYPE
@@ -169,6 +171,14 @@ async def ensure_identity(
     # The secret is **this participant's own** (`D-51`). The anchor's copy of the
     # `Participant` row deliberately carries none, because the anchor is not this
     # participant's STS and must not be able to act as it.
+    #
+    # Refused **before** the write under production: the service lifespan's
+    # guard runs only after this init has stored the hash, so a placeholder
+    # would replace the secret the serving pod's EDC presents (found on the first cluster install).
+    if is_production():
+        guard = ProductionGuard("ir-cli")
+        register_participant_sts_secret(guard, settings)
+        guard.enforce()
     participant = (
         await db.execute(select(Participant).where(Participant.did == did))
     ).scalar_one_or_none()

@@ -1,0 +1,38 @@
+# A local cluster's only change to a ds image: it trusts the cluster's local CA.
+#
+# ds's charts have no CA-bundle value: a deployment behind a public CA needs none. A
+# local cluster serves its hosts (the participants', the anchor's, a bundled Keycloak's)
+# under a self-signed CA (helm/minikube/minikube.sh certs), and every ds service fetches
+# over HTTPS from them: the realm's JWKS (Python, PyJWKClient/urllib), did:web documents
+# and the trust list (Python, httpx), and the EDC's DID resolution (Java). So the CA goes
+# into each trust store here, and nothing else changes: same code, same entrypoint, same
+# user.
+#
+#   docker build -f Dockerfile.local-ca --build-arg BASE=<plain image> \
+#     --build-arg RUNTIME_USER=<the base's USER> -t <local image> <dir holding ca.crt>
+ARG BASE
+FROM ${BASE}
+ARG RUNTIME_USER
+USER root
+COPY ca.crt /usr/local/share/ca-certificates/local-ca.crt
+# Debian and Alpine images with ca-certificates: the system bundle. Java: its own cacerts
+# (the EDC image's JRE). Node reads NODE_EXTRA_CA_CERTS; Python's httpx and urllib read
+# SSL_CERT_FILE. **And certifi's bundle itself:** the registries' did:web resolver builds
+# its TLS context with `trust_env=False` on purpose (no environment proxy may move a
+# request its address check never saw), so it reads certifi's file and no variable.
+RUN set -e; \
+    if command -v update-ca-certificates >/dev/null; then update-ca-certificates >/dev/null 2>&1; \
+    else cat /usr/local/share/ca-certificates/local-ca.crt >> /etc/ssl/certs/ca-certificates.crt; fi; \
+    for py in python3 python; do \
+      if command -v "$py" >/dev/null && "$py" -c 'import certifi' 2>/dev/null; then \
+        cat /usr/local/share/ca-certificates/local-ca.crt >> "$("$py" -c 'import certifi; print(certifi.where())')"; \
+        break; \
+      fi; \
+    done; \
+    if [ -x "${JAVA_HOME:-/nonexistent}/bin/keytool" ]; then \
+      "$JAVA_HOME/bin/keytool" -importcert -noprompt -cacerts -storepass changeit \
+        -alias local-ca -file /usr/local/share/ca-certificates/local-ca.crt; \
+    fi
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/local-ca.crt
+USER ${RUNTIME_USER}

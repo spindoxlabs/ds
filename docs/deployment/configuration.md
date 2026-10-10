@@ -135,6 +135,7 @@ Treat that as containment, not authentication.
 | `authority.enabled` | `true` | gates the whole release |
 | `authority.identityRegistry.replicaCount` | `1` | migrations run as an init container; see [Replicas and migrations](#replicas-and-migrations) |
 | `authority.identityRegistry.trustAnchorDomain` | `""` → `<hosts.trustAnchor>.<baseDomain>` | every participant derives the anchor's DID, trust list and status URL from `hosts.trustAnchor` + `baseDomain`; a literal here that differs **fails the render**, since the anchor would sign as a DID nobody trusts |
+| `authority.identityRegistry.didWeb.internalHosts`, `.internalNetworks` | `[]`, `[]` | ADR-0029: the dataspace's own host suffixes and the private networks they may resolve to from inside the cluster; both or neither, forwarded to every identity registry. Empty: did:web documents are fetched from public addresses only. Setups in [exposure](exposure.md#when-the-cluster-resolves-the-dataspaces-own-hosts-privately) |
 | `authority.identityRegistry.credentialService.expose` | `false` | publish the DCP presentation-query endpoint; in the EDC flow the holder self-presents, so remote verifiers normally never call it |
 | `authority.identityRegistry.bootstrap.enabled` | `true` | run the bootstrap and seed import as an init container |
 | `authority.identityRegistry.bootstrap.seedConfigMap` | `""` | a ConfigMap with `agreements.yaml` / `owners.yaml`; empty → the image's baked-in defaults |

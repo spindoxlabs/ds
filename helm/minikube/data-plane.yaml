@@ -1,0 +1,72 @@
+# The data-plane stand-in for a local cluster: ds's dataset-api-mock, a dev fixture used
+# only here (helm/docs: "Deliberately not charted"). It runs where the deployment's real
+# data plane would (`${NAMESPACE}`), labelled like it (`app.kubernetes.io/name:
+# dataset-api`), which is what the connectors' `networkPolicy.ingressFrom` admits. It
+# asks the provider's connector for decisions (/internal/dataplane/authorize) and for the
+# EDR verification key (/internal/edr-jwks), as `svc-ds-dataset-api`, under
+# DS_ENV=production. Filled in and applied by `helm/minikube/minikube.sh data-plane`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ds-data-plane
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: dataset-api
+    app.kubernetes.io/instance: ds-data-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dataset-api
+      app.kubernetes.io/instance: ds-data-plane
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dataset-api
+        app.kubernetes.io/instance: ds-data-plane
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: dataset-api
+          image: ${IMAGE}
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          ports:
+            - containerPort: 30002
+          env:
+            - name: DS_ENV
+              value: production
+            - name: DATASET_API_CONNECTOR_INTERNAL_URL
+              value: ${CONNECTOR_URL}
+            - name: DATASET_API_KEYCLOAK_TOKEN_URL
+              value: ${TOKEN_URL}
+            - name: DATASET_API_SERVICE_CLIENT_ID
+              value: svc-ds-dataset-api
+            - name: DATASET_API_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ds-data-plane
+                  key: serviceClientSecret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 30002
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ds-data-plane
+  namespace: ${NAMESPACE}
+spec:
+  selector:
+    app.kubernetes.io/name: dataset-api
+    app.kubernetes.io/instance: ds-data-plane
+  ports:
+    - port: 30002
+      targetPort: 30002

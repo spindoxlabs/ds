@@ -10,9 +10,14 @@
 {{- .Values.trustAnchor.did | default (printf "did:web:%s.%s" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) -}}
 {{- end -}}
 
-{{/* Identity-registry base URL — authority namespace, in-cluster DNS. */}}
+{{/*
+This participant's own identity registry (`ds-identity-registry-<participant>`, in this
+release's namespace): it holds the participant's key and the secret this EDC presents
+to its STS (`D-47`, `D-51`). Not the trust anchor's, which mints no STS secret and
+cannot sign for a participant. Derived from the participant name, never the release.
+*/}}
 {{- define "edc.irBase" -}}
-{{- printf "http://ds-identity-registry.%s.svc.cluster.local:30005" ((.Values.global).namespaces).authority -}}
+{{- printf "http://ds-identity-registry-%s.%s.svc.cluster.local:30005" .Values.participant.name .Release.Namespace -}}
 {{- end -}}
 
 {{- define "edc.connectorService" -}}

@@ -13,3 +13,7 @@ charts/*/Chart.lock
 # from your own repository"): ds is public, and a real deployment's ciphertext
 # must not be committed here, encrypted or not. Ignored so it cannot be.
 secrets.sops.yaml
+
+# The minikube setup: generated secrets and the local CA (helm/minikube/minikube.sh).
+minikube/secrets.yaml
+minikube/.certs/

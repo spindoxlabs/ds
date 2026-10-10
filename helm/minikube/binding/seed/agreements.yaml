@@ -1,0 +1,10 @@
+# The minikube environment's participation agreement. A placeholder text: it proves the
+# import and the acceptance path, not the legal wording (a parallel track).
+agreements:
+  - id: minikube-participation
+    version: "0.1"
+    effective_from: 2026-10-01
+    applies_to: [consumer, provider]
+    capacity: processor
+    text:
+      en: content/participation-en.md

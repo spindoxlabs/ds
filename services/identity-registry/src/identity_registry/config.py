@@ -359,6 +359,33 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ADR-0029. The dataspace's own hosts may resolve to a private address in a
+    # listed network (a cluster whose DNS answers them from inside, e.g. with the
+    # node's address). Both or neither; comma-separated; empty changes nothing.
+    did_web_internal_hosts: str = Field(
+        default="",
+        description=(
+            "Host suffixes of this dataspace's own did:web hosts (e.g. "
+            "`.ds.example.org`) that may resolve to a private address listed in "
+            "`did_web_internal_networks`. Empty: only public addresses, as before."
+        ),
+    )
+    did_web_internal_networks: str = Field(
+        default="",
+        description=(
+            "The private networks (CIDR; a single address is a /32) those hosts may "
+            "resolve to. Required together with `did_web_internal_hosts`."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _did_web_internal_allowance_is_sound(self) -> Settings:
+        """Refused at load: half-configured, a TLD-wide suffix, a default route."""
+        from .services.did_resolver import InternalAllowance
+
+        InternalAllowance.from_settings(self)
+        return self
+
     @model_validator(mode="after")
     def _renewal_window_fits_the_lifetime(self) -> Settings:
         """A window as long as the lifetime makes every successor due at birth.
@@ -501,6 +528,24 @@ def register_encryption_key(guard, settings: Settings) -> None:
             "is a committed dev value (`dev-…`)",
             remediation,
         )
+
+
+def register_participant_sts_secret(guard, settings: Settings) -> None:
+    """Refuse a dev or placeholder ``IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET``.
+
+    The secret this participant's own EDC presents to this instance's STS
+    (`D-51`). Registered by the service lifespan on a participant instance, and
+    enforced by ``ensure_identity`` **before** it stores the hash: a rollout whose
+    lifespan guard refuses would otherwise already have replaced the stored hash
+    under the pod that is serving.
+    """
+    guard.forbid_default(
+        "IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET",
+        settings.participant_sts_secret,
+        {"insecure-dev-secret"},
+        "Set the secret this participant's own connector presents to its "
+        "own STS. It is yours to choose — the trust anchor never mints one.",
+    )
 
 
 def refuse_dev_encryption_key_in_production(entry_point: str) -> None:

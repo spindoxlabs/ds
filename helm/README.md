@@ -166,3 +166,19 @@ helmfile -e example template         # the whole set from the committed example
 update` never writes the tree) and asserts over the parsed objects; the
 pilot-shaped values are `tests/pilot/values.yaml`. See the store playbook
 *rendering-and-testing-the-charts*.
+
+## A local cluster
+
+```bash
+export KUBECONFIG=$PWD/.minikube.kubeconfig   # a kubeconfig of its own, never the default
+task helm:minikube:build-images
+task helm:minikube:all                        # minikube + Calico, local CA, bundled realm and
+                                              # Postgres, anchor + example-rec + example-dso,
+                                              # enrolment, data-plane stand-in
+task helm:minikube:gates -- all
+```
+
+`helm/minikube/` holds the steps (`minikube.sh`), the `minikube` environment's values, a
+generic binding (owners, agreement, governance, organisation clients), the local-CA image
+layer and the gates. A deployment rehearses with the same steps and its own files: see
+[docs/deployment/local-cluster.md](../docs/deployment/local-cluster.md).

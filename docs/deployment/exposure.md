@@ -105,6 +105,36 @@ DID documents carry the public keys every trust decision rests on. Fetching them
 participant identity verification to any on-path attacker. That is why `didWebUseHttps` exists
 as a value at all — to make the invariant visible, not to make it negotiable.
 
+## When the cluster resolves the dataspace's own hosts privately
+
+Under `DS_ENV=production` the identity registries dial only **public** addresses when they
+fetch a did:web document or deliver a credential: the URL comes from a DID somebody else chose.
+If, from inside the cluster, your own `<participant>.<baseDomain>` and
+`trust-anchor.<baseDomain>` resolve to a **private** address, every enrolment is refused with
+`resolves to a non-public address`. List your hosts' suffixes and the networks they resolve to
+(ADR-0029), once, for every registry:
+
+```yaml
+authority:
+  identityRegistry:
+    didWeb:
+      internalHosts: [.ds.example.org]     # a list; at least two labels each
+      internalNetworks: [192.168.1.10/32]  # a list; IPv4 or IPv6, any private prefix
+```
+
+Both or neither (the render fails otherwise, and so does the service). Link-local, metadata,
+multicast, reserved and unspecified addresses stay refused, and any other host is unaffected.
+Each registry logs `did:web internal allowance active: …` at start. Three setups:
+
+| Your cluster's DNS | Setting |
+|---|---|
+| the hosts resolve publicly from inside the cluster too (the default) | none: leave both lists empty |
+| split horizon: inside the cluster `*.<baseDomain>` answers the address of the node that runs the ingress, with no hairpin to the public address | `internalHosts: [.<baseDomain>]`, `internalNetworks: [<node address>/32]` (several nodes: several `/32`, or their subnet) |
+| an in-cluster resolver answers with the ingress controller's service address | `internalHosts: [.<baseDomain>]`, `internalNetworks: [<the cluster's service CIDR, e.g. 10.96.0.0/12>]`, or that one address as a `/32` |
+
+Check which applies from a pod in a participant namespace:
+`getent hosts trust-anchor.<baseDomain>`. A public address needs no setting.
+
 ## One certificate per host
 
 Several Ingress objects can share a host: nginx's `rewrite-target` is a per-object annotation,

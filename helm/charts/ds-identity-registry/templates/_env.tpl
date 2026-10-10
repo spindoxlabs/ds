@@ -28,6 +28,19 @@ ability to mint credentials.
 */}}
 - name: IDENTITY_REGISTRY_ROLE
   value: {{ include "ir.role" . | quote }}
+{{- $dw := .Values.didWeb | default dict }}
+{{- $dwHosts := $dw.internalHosts | default list }}
+{{- $dwNets := $dw.internalNetworks | default list }}
+{{- if or $dwHosts $dwNets }}
+{{- if not (and $dwHosts $dwNets) }}
+{{- fail "didWeb: set both internalHosts and internalNetworks, or neither (ADR-0029)" }}
+{{- end }}
+{{/* ADR-0029: the dataspace's own hosts may resolve into these private networks. */}}
+- name: IDENTITY_REGISTRY_DID_WEB_INTERNAL_HOSTS
+  value: {{ join "," $dwHosts | quote }}
+- name: IDENTITY_REGISTRY_DID_WEB_INTERNAL_NETWORKS
+  value: {{ join "," $dwNets | quote }}
+{{- end }}
 {{- if eq (include "ir.role" .) "participant" }}
 {{/*
 A participant instance serves only the DIDs it holds keys for. Without a DID it

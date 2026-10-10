@@ -18,6 +18,7 @@ impossible to produce by omission.
 | configuring a deployment | [Configuration reference](configuration.md), [Secrets](secrets.md) |
 | reviewing the security posture | [Exposure and network policy](exposure.md) |
 | installing, upgrading, debugging | [Operations](operations.md) |
+| trying it, or rehearsing a deployment, on a local cluster | [A local cluster (minikube)](local-cluster.md) |
 
 ## What deploys
 

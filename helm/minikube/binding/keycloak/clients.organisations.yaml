@@ -1,0 +1,84 @@
+# The minikube environment's organisation clients: one per organisation (ds ADR-0014),
+# plus the community's collector client (ADR-0026). The `sub` mapper must equal the
+# participant DID, which EDC 0.18.0's v5 management API matches against
+# `edc.participant.context.id`. The scope lists are `ds_auth.ORGANISATION_CLIENT_*_SCOPES`
+# and `COLLECTOR_CLIENT_OPTIONAL_SCOPES`; the secrets come from the generated secrets
+# file (helm/minikube/minikube.sh realm-env). A deployment's own realm declares its own.
+clients:
+  - client_id: svc-ds-connector-example-rec
+    name: Example REC — organisation client
+    secret: ${SVC_DS_CONNECTOR_EXAMPLE_REC_SECRET:-svc-ds-connector-example-rec}
+    hardcoded_claims:
+      sub: did:web:example-rec.ds.test
+    extra_audiences:
+      - svc-ds-identity-registry
+      - svc-ds-provenance
+      - svc-ds-connector
+    default_scopes:
+      - identity-registry.read
+      - identity-registry.membership.read
+      - identity-registry.credentials.read
+      - provenance.write
+      - connector.consent.read
+      - connector.consent.holder.read
+      - connector.provider.read
+    optional_scopes:
+      - management-api:assets:write
+      - management-api:policies:write
+      - management-api:contractdefinitions:write
+      - management-api:catalog:read
+      - management-api:negotiations:write
+      - management-api:agreements:read
+      - management-api:transfers:write
+      - edc.management
+      - connector.consent.provision
+      - connector.consent.collector.read
+      - connector.provider.write
+
+  # The community's collector client (ADR-0026): what its onboarding acts as for its
+  # members. No default scope, no client-level audience, one audience per optional scope.
+  - client_id: svc-ds-collector-example-rec
+    name: Example REC — collector client
+    secret: ${SVC_DS_COLLECTOR_EXAMPLE_REC_SECRET:-svc-ds-collector-example-rec}
+    hardcoded_claims:
+      sub: did:web:example-rec.ds.test
+    default_scopes: []
+    optional_scopes:
+      - identity-registry.memberships.write
+      - connector.consent.provision
+      - connector.consent.collector.read
+      - identity-registry.credentials.write
+      - connector.consent.audience
+      - connector.disclosure.record
+      - provenance.write
+      - identity-registry.keycloak.sync
+
+  - client_id: svc-ds-connector-example-dso
+    name: Example DSO — organisation client
+    secret: ${SVC_DS_CONNECTOR_EXAMPLE_DSO_SECRET:-svc-ds-connector-example-dso}
+    hardcoded_claims:
+      sub: did:web:example-dso.ds.test
+    extra_audiences:
+      - svc-ds-identity-registry
+      - svc-ds-provenance
+      - svc-ds-connector
+    default_scopes:
+      - identity-registry.read
+      - identity-registry.membership.read
+      - identity-registry.credentials.read
+      - provenance.write
+      - connector.consent.read
+      - connector.consent.holder.read
+      - connector.provider.read
+    optional_scopes:
+      - management-api:assets:write
+      - management-api:policies:write
+      - management-api:contractdefinitions:write
+      - management-api:catalog:read
+      - management-api:negotiations:write
+      - management-api:agreements:read
+      - management-api:transfers:write
+      - edc.management
+      - connector.consent.provision
+      - connector.consent.collector.read
+      - connector.provider.write

@@ -1,0 +1,42 @@
+# The minikube environment's owners: two generic organisations, never a real
+# one. A community that collects its members'
+# consent and both provides and consumes (`example-rec`), and a grid operator that
+# provides and holds the consent the community registers (`example-dso`).
+#
+# Mounted into the trust anchor's bootstrap as `owners.yaml` (seed ConfigMap): the chart
+# runs `ir-cli owner import` then `ir-cli org apply` with `bootstrap.orgApply`'s flags,
+# which walks every entry with a `dataspace:` block to a promoted participant.
+#
+# The DIDs and DSP addresses are the ones the charts derive from the participant name
+# and `global.baseDomain` (helm/minikube/values.yaml.gotmpl): a mismatch would
+# promote a participant no connector speaks for.
+owners:
+  - id: example-rec
+    type: schema:NGO
+    name: Example Renewable Energy Community
+    collects_consent: true
+    did: did:web:example-rec.ds.test
+    dataspace:
+      roles: [provider, consumer]
+      dsp_address: https://example-rec.ds.test/protocol/2025-1
+      accepted:
+        agreement: minikube-participation
+        version: "0.1"
+        locale: en
+        accepted_by: "ds-minikube"
+      verified_by: ds-minikube
+      evidence_ref: helm/minikube/binding/seed/owners.yaml
+  - id: example-dso
+    type: schema:Corporation
+    name: Example Distribution System Operator
+    did: did:web:example-dso.ds.test
+    dataspace:
+      roles: [provider]
+      dsp_address: https://example-dso.ds.test/protocol/2025-1
+      accepted:
+        agreement: minikube-participation
+        version: "0.1"
+        locale: en
+        accepted_by: "ds-minikube"
+      verified_by: ds-minikube
+      evidence_ref: helm/minikube/binding/seed/owners.yaml

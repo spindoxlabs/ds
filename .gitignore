@@ -101,3 +101,6 @@ services/connector/governance-rec/sharing-offers.d/
 
 # Local plain-text private-names list for the no-private-names guard (never commit)
 .private-names
+
+# A local cluster's own kubeconfig (docs/deployment/local-cluster.md).
+.minikube.kubeconfig

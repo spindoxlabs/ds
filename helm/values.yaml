@@ -206,6 +206,16 @@ authority:
     credentialService:
       expose: false
 
+    # did:web internal allowance (ADR-0029), forwarded to every identity registry.
+    # Empty: the registries fetch did:web documents only from public addresses,
+    # which is right wherever the dataspace's hosts resolve publicly from inside the
+    # cluster too. Where the cluster answers them with a private address, list the
+    # host suffixes AND the networks (both or neither). docs/deployment/exposure.md
+    # shows the setups: one host address (/32), an in-cluster range, none.
+    didWeb:
+      internalHosts: [] # e.g. [.ds.example.org]
+      internalNetworks: [] # e.g. [192.168.1.10/32]
+
     bootstrap:
       # ir-cli bootstrap + participant/owner/membership seeding, as an init
       # container. Idempotent (upsert semantics), safe on every pod start.

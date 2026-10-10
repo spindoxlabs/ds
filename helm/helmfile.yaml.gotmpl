@@ -51,6 +51,19 @@ environments:
     secrets:
       - secrets.sops.yaml
 
+  # ── A local cluster ─────────────────────────────────────────────────────────
+  #
+  #   helm/minikube/minikube.sh all        (docs/deployment/local-cluster.md)
+  #
+  # The charts under the production posture on minikube, generic names only: the
+  # secret policy runs (this is not `example`), the secrets are generated into
+  # minikube/secrets.yaml (never committed) and must exist.
+  minikube:
+    values:
+      - values.yaml
+      - minikube/values.yaml.gotmpl
+      - minikube/secrets.yaml
+
   # ── The environment that makes this file checkable ──────────────────────────
   #
   #   helmfile -e example template
@@ -296,6 +309,9 @@ releases:
         connectorUrls: {{ $urls := list }}{{ range .Values.participants }}{{ if .enabled }}{{ $urls = append $urls (printf "http://ds-connector-%s.%s%s.svc.cluster.local:30001" .name $.Values.global.namespaces.participantPrefix .name) }}{{ end }}{{ end }}{{ join "," $urls | quote }}
         credentialService:
           expose: {{ .Values.authority.identityRegistry.credentialService.expose }}
+        # ADR-0029, the dataspace's own: the same block reaches every registry.
+        didWeb:
+          {{- toYaml (.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
         # Passed through whole rather than key by key: a forgotten key here is
         # a flag that silently stops reaching the bootstrap, which is the
         # `PT-11` shape — a supply path that omits what was added last
@@ -379,6 +395,9 @@ through them, so a block naming one fails rather than silently competing.
         # The authority's release owns onboarding, agreements and the realm.
         bootstrap:
           enabled: true
+        # ADR-0029: the dataspace's own hosts, the same allowance as the anchor's.
+        didWeb:
+          {{- toYaml ($root.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
         keycloak:
           sync:
             enabled: false

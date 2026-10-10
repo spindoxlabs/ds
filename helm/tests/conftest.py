@@ -60,7 +60,7 @@ def _key(obj: dict) -> tuple[str, str, str]:
 def helm_copy(tmp_path_factory: pytest.TempPathFactory) -> Path:
     dest = tmp_path_factory.mktemp("render") / "helm"
     patterns = shutil.ignore_patterns(
-        "Chart.lock", "__pycache__", ".pytest_cache", "secrets.sops.yaml"
+        "Chart.lock", "__pycache__", ".pytest_cache", "secrets.sops.yaml", ".certs"
     )
 
     def ignore(directory: str, names: list[str]) -> set[str]:

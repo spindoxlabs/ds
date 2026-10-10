@@ -209,6 +209,37 @@ async def test_outside_dev_the_dev_keys_refuse_to_start(monkeypatch, env):
         get_settings.cache_clear()
 
 
+@pytest.mark.parametrize("placeholder", ["CHANGE_ME", "changeme", "Change-Me", "password"])
+async def test_outside_dev_a_placeholder_key_index_secret_refuses_to_start(
+    monkeypatch, placeholder
+):
+    """A placeholder is refused by name, like the committed dev value.
+
+    The key-index secret is any string, so no parse catches it the way the
+    Fernet parse catches a placeholder at-rest key; only the guard can. Found on
+    the first cluster install (the first cluster install, 2026-10-09): `CHANGE_ME` here booted,
+    while the render policy and the preflight both refused the same file.
+    """
+    from ds_auth.production import InsecureProductionConfig
+
+    from connector.main import create_app, lifespan
+
+    monkeypatch.setenv("CONNECTOR_AT_REST_KEYS", Fernet.generate_key().decode())
+    monkeypatch.setenv("CONNECTOR_KEY_INDEX_SECRET", placeholder)
+    monkeypatch.setenv("DS_ENV", "production")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(InsecureProductionConfig) as refused:
+            async with lifespan(create_app()):
+                pass
+        named = [l for l in str(refused.value).splitlines() if "CONNECTOR_KEY_INDEX_SECRET:" in l]
+        assert named, str(refused.value)
+        # Named, never echoed.
+        assert all(placeholder not in line for line in named)
+    finally:
+        get_settings.cache_clear()
+
+
 async def test_a_malformed_key_refuses_to_start_even_in_dev(monkeypatch):
     from connector.main import create_app, lifespan
 

@@ -1,0 +1,42 @@
+# The minikube DSO's governance. One open, consent-free dataset, so the transfer
+# gate (T5.3) exercises the DSP path and the PEP call without the consent machinery.
+# Shaped after ds's dev fixture services/connector/governance-grid-operator/.
+#
+# The data plane is the stand-in in the platform namespace (helm/minikube/data-plane.yaml):
+# ds's dataset-api-mock, a dev fixture used only by local clusters, which asks this
+# connector's /internal/dataplane/authorize. A change here is a checksum change
+# (helm/minikube/values.yaml.gotmpl reads this file's digest), so the connector
+# rolls and the publishing hook re-runs (T5.5).
+defaults:
+  access_level: open
+  classification: green
+  tags: []
+  retention_days: 365
+  ownership:
+    - name: example-dso
+      type: DATA_OWNER
+  dataspace:
+    expose: false
+
+sources:
+  datasets.gold.grid_capacity:
+    title: "Substation Capacity Headroom (Gold)"
+    description: >-
+      Available headroom per substation, hourly. Local data from the stand-in plane.
+    license: CC-BY-4.0
+    access_level: open
+    classification: green
+    tags: [grid, gold, capacity]
+    source_system: local stand-in
+    dataspace:
+      expose: true
+      medallion: gold
+      purpose: [GridMonitoring, EnergyCommunityOperation]
+      asset:
+        id: "datasets.gold.grid_capacity"
+        content_type: "application/json"
+      data_address:
+        type: HttpData
+        base_url: "http://ds-data-plane.ds-platform.svc.cluster.local:30002/query"
+        proxy_path: false
+        proxy_query_params: true

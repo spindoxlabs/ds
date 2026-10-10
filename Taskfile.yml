@@ -1836,6 +1836,13 @@ tasks:
         --with pyyaml
         pytest helm/tests -q -p no:cacheprovider
 
+  helm:minikube:*:
+    desc: "The charts on a local minikube under DS_ENV=production: task helm:minikube:<step> [-- args]; steps in helm/minikube/minikube.sh, procedure in docs/deployment/local-cluster.md. Needs KUBECONFIG set to a kubeconfig of its own"
+    vars:
+      STEP: "{{index .MATCH 0}}"
+    cmds:
+      - helm/minikube/minikube.sh {{.STEP}} {{.CLI_ARGS}}
+
   # ── Documentation ────────────────────────────────────────────────────────
   docs:serve:
     desc: Serve docs locally with live reload (http://127.0.0.1:8000)
