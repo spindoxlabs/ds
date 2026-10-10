@@ -80,7 +80,9 @@ def _pseudonymise_fields(
             out[name] = pseudonym(out[name], key)
     for name in lists:
         if isinstance(out.get(name), list):
-            out[name] = [pseudonym(v, key) if isinstance(v, str) else v for v in out[name]]
+            out[name] = [
+                pseudonym(v, key) if isinstance(v, str) else v for v in out[name]
+            ]
     return out
 
 
@@ -93,7 +95,9 @@ def person_ids(payload: dict) -> set[str]:
     found = {payload.get(name) for name in PERSON_FIELDS}
     for name in PERSON_LIST_FIELDS:
         found.update(payload.get(name) or [])
-    return {v for v in found if isinstance(v, str) and not v.startswith(PSEUDONYM_PREFIX)}
+    return {
+        v for v in found if isinstance(v, str) and not v.startswith(PSEUDONYM_PREFIX)
+    }
 
 
 def _utc(value: datetime | None) -> str | None:
@@ -148,7 +152,9 @@ async def _head(session: AsyncSession) -> tuple[int, str]:
 
 async def _lock(session: AsyncSession) -> None:
     if session.bind is not None and session.bind.dialect.name == "postgresql":
-        await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK})
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK}
+        )
 
 
 async def append(session: AsyncSession, row: DomainEventORM) -> None:
@@ -210,13 +216,17 @@ async def verify(session: AsyncSession) -> Verification:
     last_seq = 0
     while True:
         rows = (
-            await session.execute(
-                select(DomainEventORM)
-                .where(DomainEventORM.seq > last_seq)
-                .order_by(DomainEventORM.seq)
-                .limit(_BATCH)
+            (
+                await session.execute(
+                    select(DomainEventORM)
+                    .where(DomainEventORM.seq > last_seq)
+                    .order_by(DomainEventORM.seq)
+                    .limit(_BATCH)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if not rows:
             break
         for row in rows:
@@ -281,13 +291,17 @@ async def apply_retention(
     result = RetentionResult(cutoff=cutoff.isoformat())
 
     rows = (
-        await session.execute(
-            select(DomainEventORM).where(
-                DomainEventORM.pseudonymised_at.is_(None),
-                DomainEventORM.occurred_at < cutoff,
+        (
+            await session.execute(
+                select(DomainEventORM).where(
+                    DomainEventORM.pseudonymised_at.is_(None),
+                    DomainEventORM.occurred_at < cutoff,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     node_ids: set[str] = set()
     for row in rows:
         result.ids |= person_ids(row.payload or {})
@@ -304,7 +318,9 @@ async def apply_retention(
     # The activity nodes those events materialised carry the same ids.
     if node_ids:
         nodes = (
-            await session.execute(select(ProvNodeORM).where(ProvNodeORM.id.in_(node_ids)))
+            await session.execute(
+                select(ProvNodeORM).where(ProvNodeORM.id.in_(node_ids))
+            )
         ).scalars()
         for node in nodes:
             if node.external_meta:
@@ -316,11 +332,14 @@ async def apply_retention(
                     result.nodes += 1
 
     logs = (
-        await session.execute(select(AccessLogORM).where(AccessLogORM.logged_at < cutoff))
+        await session.execute(
+            select(AccessLogORM).where(AccessLogORM.logged_at < cutoff)
+        )
     ).scalars()
     for entry in logs:
         if entry.subject_ids and any(
-            isinstance(v, str) and not v.startswith(PSEUDONYM_PREFIX) for v in entry.subject_ids
+            isinstance(v, str) and not v.startswith(PSEUDONYM_PREFIX)
+            for v in entry.subject_ids
         ):
             entry.subject_ids = [pseudonym(v) for v in entry.subject_ids]
             result.access_log += 1
@@ -373,19 +392,26 @@ async def _rename_agents(session: AsyncSession, ids: set[str]) -> int:
     return renamed
 
 
-async def _merge_into(session: AsyncSession, old: ProvNodeORM, target: ProvNodeORM) -> None:
+async def _merge_into(
+    session: AsyncSession, old: ProvNodeORM, target: ProvNodeORM
+) -> None:
     """Move every edge of `old` onto `target`, then drop `old`.
 
     Reached when a person came back after an earlier run had already renamed
     them: the newer clear-text node joins the pseudonymous one.
     """
     edges = (
-        await session.execute(
-            select(ProvRelationORM).where(
-                (ProvRelationORM.subject_id == old.id) | (ProvRelationORM.object_id == old.id)
+        (
+            await session.execute(
+                select(ProvRelationORM).where(
+                    (ProvRelationORM.subject_id == old.id)
+                    | (ProvRelationORM.object_id == old.id)
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for edge in edges:
         subject = target.id if edge.subject_id == old.id else edge.subject_id
         obj = target.id if edge.object_id == old.id else edge.object_id

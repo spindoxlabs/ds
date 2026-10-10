@@ -33,8 +33,12 @@ def test_the_default_is_no_allowance():
 
 @pytest.mark.parametrize(
     ("hosts", "networks"),
-    [(".ds.example.org", ""), ("", "10.0.0.0/8"), (".org", "10.0.0.0/8"),
-     (".ds.example.org", "0.0.0.0/0")],
+    [
+        (".ds.example.org", ""),
+        ("", "10.0.0.0/8"),
+        (".org", "10.0.0.0/8"),
+        (".ds.example.org", "0.0.0.0/0"),
+    ],
 )
 def test_an_unsound_allowance_refuses_to_load(hosts, networks):
     with pytest.raises(ValidationError, match="did:web internal allowance"):
@@ -58,8 +62,12 @@ async def test_a_person_route_resolves_with_the_service_allowance(monkeypatch):
     )
     with pytest.raises(HTTPException):
         await dependencies.verify_person(
-            None, "vc", "did:web:x", {"DataSubject"},
-            linked_participant=None, settings=settings,
+            None,
+            "vc",
+            "did:web:x",
+            {"DataSubject"},
+            linked_participant=None,
+            settings=settings,
         )
     assert seen["did_web_allowance"] == settings.did_web_allowance
     assert seen["did_web_allowance"]
@@ -82,9 +90,7 @@ async def test_an_active_allowance_is_logged_at_start(monkeypatch):
         raise _Stop
 
     monkeypatch.setattr(main, "verify_schema", stop)
-    monkeypatch.setattr(
-        main.log, "warning", lambda msg, *args: said.append(msg % args)
-    )
+    monkeypatch.setattr(main.log, "warning", lambda msg, *args: said.append(msg % args))
     monkeypatch.setenv("DS_ENV", "dev")
     monkeypatch.setenv("CONNECTOR_DID_WEB_INTERNAL_HOSTS", ".ds.example.org")
     monkeypatch.setenv("CONNECTOR_DID_WEB_INTERNAL_NETWORKS", "192.168.1.10/32")

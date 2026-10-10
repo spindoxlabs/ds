@@ -24,8 +24,10 @@ import yaml
 from conftest import ISSUER, declared_clients, fetch_token
 
 from ds_auth import (
+    EDC_TOKEN_SCOPE,
     MANAGEMENT_API_SCOPES,
     ORGANISATION_CLIENT_PREFIX,
+    ORGANISATION_READ_SCOPES,
     OidcConfig,
     is_management_api_scope,
     organisation_client_id,
@@ -38,6 +40,9 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 ORGANIZATIONS = REPO_ROOT / "services" / "keycloak" / "organizations.yaml"
 KEYCLOAK_URL, REALM = ISSUER.rsplit("/realms/", 1)
 SUB_MAPPER = "participant-context-sub"
+#: Every management-API scope a client may hold: the EDC grants plus the reads
+#: only the ds connector checks.
+GRANTED = {*MANAGEMENT_API_SCOPES, *ORGANISATION_READ_SCOPES}
 
 
 def _organisations() -> list[dict]:
@@ -115,7 +120,7 @@ def test_only_organisation_clients_hold_a_management_api_scope(admin):
 
 def test_no_client_holds_more_than_the_granted_list(admin):
     for client_id, entry in _held_management_scopes(admin).items():
-        extra = entry["scopes"] - set(MANAGEMENT_API_SCOPES)
+        extra = entry["scopes"] - GRANTED
         assert not extra, f"{client_id} holds {sorted(extra)}"
 
 
@@ -138,12 +143,15 @@ def test_the_realm_declares_only_the_granted_management_api_scopes(admin):
         for s in admin.get("/client-scopes").json()
         if is_management_api_scope(s["name"])
     }
-    assert declared == set(MANAGEMENT_API_SCOPES)
+    assert declared == GRANTED
 
 
 @pytest.mark.parametrize("org", ORGS, ids=[o["alias"] for o in ORGS])
 def test_an_organisation_token_carries_its_context_and_scopes(org, keycloak_is_up):
-    token = fetch_token(organisation_client_id(org["alias"]))
+    # The management-API scopes are optional: only a token that asks carries them.
+    plain = _payload(fetch_token(organisation_client_id(org["alias"])))
+    assert not [s for s in plain["scope"].split() if is_management_api_scope(s)]
+    token = fetch_token(organisation_client_id(org["alias"]), scope=EDC_TOKEN_SCOPE)
     claims = _payload(token)
     assert claims["sub"] == org["participant_context_id"]
     assert set(MANAGEMENT_API_SCOPES) <= set(claims["scope"].split())

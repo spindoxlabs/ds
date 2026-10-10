@@ -43,7 +43,9 @@ def test_an_organization_filter_is_not_a_consent_signal():
 def test_an_undeclared_filter_still_gates():
     """The default is `person`: a forgotten flag over-gates, never under-gates."""
     assert consent_gate(_rule(PERSON)).signals == ("row_filters",)
-    assert consent_gate(_rule({**PERSON, "binds": "person"})).signals == ("row_filters",)
+    assert consent_gate(_rule({**PERSON, "binds": "person"})).signals == (
+        "row_filters",
+    )
 
 
 @pytest.mark.rule("D-3a")
@@ -124,7 +126,11 @@ class TestCompliance:
         """The likeliest cause: a person filter marked `binds: organization`."""
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(row_filters=[ORGANIZATION], **declaration)}},
+            {
+                "sources": {
+                    "a": exposed_dataset(row_filters=[ORGANIZATION], **declaration)
+                }
+            },
         )
         assert "consent-coherence" in codes(run(path).errors)
 

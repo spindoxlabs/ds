@@ -54,15 +54,21 @@ async def db():
 
 
 async def _stored(db) -> str:
-    row = (await db.execute(select(Participant).where(Participant.did == DID))).scalar_one()
+    row = (
+        await db.execute(select(Participant).where(Participant.did == DID))
+    ).scalar_one()
     return row.sts_client_secret
 
 
-@pytest.mark.parametrize("placeholder", ["CHANGE_ME", "changeme", "insecure-dev-secret", "password"])
+@pytest.mark.parametrize(
+    "placeholder", ["CHANGE_ME", "changeme", "insecure-dev-secret", "password"]
+)
 def test_a_placeholder_or_dev_sts_secret_is_a_violation(placeholder):
     guard = ProductionGuard("identity-registry", env="production")
     register_participant_sts_secret(guard, _settings(placeholder))
-    assert {v.setting for v in guard.violations} == {"IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET"}
+    assert {v.setting for v in guard.violations} == {
+        "IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET"
+    }
 
 
 def test_a_chosen_sts_secret_passes():
@@ -72,17 +78,23 @@ def test_a_chosen_sts_secret_passes():
 
 
 @pytest.mark.asyncio
-async def test_under_production_a_placeholder_never_replaces_the_stored_secret(db, monkeypatch):
+async def test_under_production_a_placeholder_never_replaces_the_stored_secret(
+    db, monkeypatch
+):
     monkeypatch.setenv("DS_ENV", "production")
     await boot.ensure_identity(db, _settings(REAL))
     await db.commit()
     assert verify_sts_secret(REAL, await _stored(db))
 
-    with pytest.raises(InsecureProductionConfig, match="IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET"):
+    with pytest.raises(
+        InsecureProductionConfig, match="IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET"
+    ):
         await boot.ensure_identity(db, _settings("CHANGE_ME"))
     await db.rollback()
 
-    assert verify_sts_secret(REAL, await _stored(db)), "the serving pod's secret was replaced"
+    assert verify_sts_secret(REAL, await _stored(db)), (
+        "the serving pod's secret was replaced"
+    )
 
 
 @pytest.mark.asyncio

@@ -127,8 +127,16 @@ def test_collector_add_leaves_a_revoked_pair_revoked_and_says_so(cli_database):
     args = _holder_and_collector(cli_database)
     assert runner.invoke(cli, ["collector", "add", *args]).exit_code == 0
     revoked = runner.invoke(
-        cli, ["collector", "revoke", *args, "--reason", "agreement ended",
-              "--by", "ops@example.org"]
+        cli,
+        [
+            "collector",
+            "revoke",
+            *args,
+            "--reason",
+            "agreement ended",
+            "--by",
+            "ops@example.org",
+        ],
     )
     assert revoked.exit_code == 0, revoked.output
 
@@ -151,8 +159,16 @@ def test_collector_reinstate_reactivates_and_records_it(cli_database):
     assert refused.exit_code != 0  # --reason is required
 
     done = runner.invoke(
-        cli, ["collector", "reinstate", *args, "--reason", "renewed",
-              "--by", "ops@example.org"]
+        cli,
+        [
+            "collector",
+            "reinstate",
+            *args,
+            "--reason",
+            "renewed",
+            "--by",
+            "ops@example.org",
+        ],
     )
     assert done.exit_code == 0, done.output
     assert "reinstated" in done.output

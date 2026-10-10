@@ -407,4 +407,3 @@ class ConsentRequestFlow(BaseFlow):
             "grant and revocation are recorded in the provenance store",
             events=sorted(expected),
         )
-

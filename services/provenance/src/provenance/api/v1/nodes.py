@@ -104,7 +104,6 @@ async def get_entity(
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
 
 
-
 # ── Activities ────────────────────────────────────────────────────────────────
 
 
@@ -145,7 +144,6 @@ async def get_activity(
     if not node or node.node_type != "Activity":
         raise HTTPException(404, "Activity not found")
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
-
 
 
 # ── Agents ────────────────────────────────────────────────────────────────────
@@ -190,4 +188,3 @@ async def get_agent(
     if not node or node.node_type != "Agent":
         raise HTTPException(404, "Agent not found")
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
-

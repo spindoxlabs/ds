@@ -21,13 +21,13 @@
   };
 
   onMount(async () => {
-    const [cytoscapeLib, dagre, cytoscapeDagre] = await Promise.all([
+    // cytoscape-dagre 4 bundles dagre itself.
+    const [cytoscapeLib, cytoscapeDagre] = await Promise.all([
       import('cytoscape'),
-      import('dagre'),
       import('cytoscape-dagre'),
     ]);
     const cytoscape = cytoscapeLib.default;
-    cytoscapeDagre.default(cytoscape, dagre.default);
+    cytoscape.use(cytoscapeDagre.default);
     const createGraph = cytoscape as unknown as (options: Record<string, unknown>) => unknown;
 
     cy = createGraph({

@@ -363,9 +363,9 @@ class E2ESettings(BaseSettings):
     grid_operator_password: str = "gridops"
     # A seat whose only group is `legacy-provider-admin`, inside `example-org` — a
     # deliberately foreign-looking name that is **not** a ds bundle and therefore
-    # grants nothing on its own. Its authority exists only if the Layer B alias map translated it,
-    # which is what makes this an assertion about the wiring rather than about the
-    # bundle table.
+    # grants nothing on its own. Its authority exists only if the Layer B alias map
+    # translated it, which is what makes this an assertion about the wiring rather
+    # than about the bundle table.
     legacy_operator_email: str = "legacy@example.test"
     legacy_operator_password: str = "legacy"
     # The owner that owns `asset_id` in the dev governance file, and one that does

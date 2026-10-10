@@ -410,4 +410,3 @@ class ConsentPurposeFlow(BaseFlow):
             log.warning(
                 "consent-purpose: could not withdraw its standing share: %s", exc
             )
-

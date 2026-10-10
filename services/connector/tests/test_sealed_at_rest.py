@@ -209,7 +209,9 @@ async def test_outside_dev_the_dev_keys_refuse_to_start(monkeypatch, env):
         get_settings.cache_clear()
 
 
-@pytest.mark.parametrize("placeholder", ["CHANGE_ME", "changeme", "Change-Me", "password"])
+@pytest.mark.parametrize(
+    "placeholder", ["CHANGE_ME", "changeme", "Change-Me", "password"]
+)
 async def test_outside_dev_a_placeholder_key_index_secret_refuses_to_start(
     monkeypatch, placeholder
 ):
@@ -217,8 +219,8 @@ async def test_outside_dev_a_placeholder_key_index_secret_refuses_to_start(
 
     The key-index secret is any string, so no parse catches it the way the
     Fernet parse catches a placeholder at-rest key; only the guard can. Found on
-    the first cluster install (the first cluster install, 2026-10-09): `CHANGE_ME` here booted,
-    while the render policy and the preflight both refused the same file.
+    the first cluster install (2026-10-09): `CHANGE_ME` here booted, while the
+    render policy and the preflight both refused the same file.
     """
     from ds_auth.production import InsecureProductionConfig
 
@@ -232,7 +234,11 @@ async def test_outside_dev_a_placeholder_key_index_secret_refuses_to_start(
         with pytest.raises(InsecureProductionConfig) as refused:
             async with lifespan(create_app()):
                 pass
-        named = [l for l in str(refused.value).splitlines() if "CONNECTOR_KEY_INDEX_SECRET:" in l]
+        named = [
+            line
+            for line in str(refused.value).splitlines()
+            if "CONNECTOR_KEY_INDEX_SECRET:" in line
+        ]
         assert named, str(refused.value)
         # Named, never echoed.
         assert all(placeholder not in line for line in named)

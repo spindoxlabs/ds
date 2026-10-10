@@ -45,10 +45,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 import httpx
+from ds_auth.production import ProductionGuard, is_production
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from ds_auth.production import ProductionGuard, is_production
 
 from ..config import Settings, register_participant_sts_secret
 from ..db.models import Credential, Did, Key, Participant
@@ -174,7 +173,8 @@ async def ensure_identity(
     #
     # Refused **before** the write under production: the service lifespan's
     # guard runs only after this init has stored the hash, so a placeholder
-    # would replace the secret the serving pod's EDC presents (found on the first cluster install).
+    # would replace the secret the serving pod's EDC presents (found on the first
+    # cluster install).
     if is_production():
         guard = ProductionGuard("ir-cli")
         register_participant_sts_secret(guard, settings)

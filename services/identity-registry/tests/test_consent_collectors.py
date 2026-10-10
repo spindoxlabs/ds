@@ -162,7 +162,6 @@ async def test_revocation_marks_and_keeps_the_row(client, world):
     ]
 
 
-
 @pytest.mark.asyncio
 async def test_adding_a_revoked_pair_again_leaves_it_revoked(client, world):
     """A declarative bootstrap re-adds the pair on every start; it must not revive it.
@@ -218,9 +217,7 @@ async def test_reinstating_is_explicit_and_recorded(client, world):
 
 
 @pytest.mark.asyncio
-async def test_reinstating_needs_a_reason_a_known_pair_and_a_revoked_one(
-    client, world
-):
+async def test_reinstating_needs_a_reason_a_known_pair_and_a_revoked_one(client, world):
     pair = {"holder_did": HOLDER, "collector_did": COLLECTOR}
     r = await client.post(
         "/admin/consent-collectors/reinstate",

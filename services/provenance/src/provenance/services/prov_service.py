@@ -104,7 +104,6 @@ async def create_agent(session: AsyncSession, data: AgentCreate) -> ProvNodeORM:
     )
 
 
-
 async def list_nodes(
     session: AsyncSession,
     node_type: str | None = None,

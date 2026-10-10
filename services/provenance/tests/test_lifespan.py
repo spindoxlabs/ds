@@ -249,9 +249,7 @@ async def test_an_active_did_web_allowance_is_logged_at_start(monkeypatch):
     from provenance import main
 
     said: list[str] = []
-    monkeypatch.setattr(
-        main.log, "warning", lambda msg, *args: said.append(msg % args)
-    )
+    monkeypatch.setattr(main.log, "warning", lambda msg, *args: said.append(msg % args))
     monkeypatch.setenv("DS_ENV", "dev")
     monkeypatch.setenv("PROVENANCE_DID_WEB_INTERNAL_HOSTS", ".ds.example.org")
     monkeypatch.setenv("PROVENANCE_DID_WEB_INTERNAL_NETWORKS", "192.168.1.10/32")

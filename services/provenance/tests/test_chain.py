@@ -80,7 +80,11 @@ async def test_each_event_is_chained_onto_the_last(client, factory):
     await ingest(client, consent("c-1"), consent("c-2"), query("q-1"))
 
     async with factory() as s:
-        rows = (await s.execute(select(DomainEventORM).order_by(DomainEventORM.seq))).scalars().all()
+        rows = (
+            (await s.execute(select(DomainEventORM).order_by(DomainEventORM.seq)))
+            .scalars()
+            .all()
+        )
     assert [r.seq for r in rows] == [1, 2, 3]
     assert rows[0].prev_hash == chain.GENESIS
     assert [r.prev_hash for r in rows[1:]] == [r.record_hash for r in rows[:-1]]
@@ -96,7 +100,9 @@ async def test_each_event_is_chained_onto_the_last(client, factory):
 async def test_a_changed_record_is_found(client, factory):
     await ingest(client, consent("c-1"), consent("c-2"), consent("c-3"))
     async with factory() as s:
-        row = (await s.execute(select(DomainEventORM).where(DomainEventORM.seq == 2))).scalar_one()
+        row = (
+            await s.execute(select(DomainEventORM).where(DomainEventORM.seq == 2))
+        ).scalar_one()
         row.payload = {**row.payload, "purpose": ["marketing"]}
         await s.commit()
 
@@ -111,7 +117,9 @@ async def test_a_changed_column_is_found(client, factory):
     """The promoted columns are what the queries filter on; they are hashed too."""
     await ingest(client, consent("c-1"))
     async with factory() as s:
-        await s.execute(update(DomainEventORM).values(consumer_did="did:web:someone-else.test"))
+        await s.execute(
+            update(DomainEventORM).values(consumer_did="did:web:someone-else.test")
+        )
         await s.commit()
 
     assert (await verified(client))["ok"] is False
@@ -167,7 +175,9 @@ async def test_verify_is_a_read_and_needs_the_read_scope(client):
         "/prov/chain/verify", headers=make_headers(scope="provenance.write")
     )
     assert r.status_code == 403
-    r = await client.get("/prov/chain/verify", headers=make_headers(scope="provenance.read"))
+    r = await client.get(
+        "/prov/chain/verify", headers=make_headers(scope="provenance.read")
+    )
     assert r.status_code == 200
 
 
@@ -204,7 +214,9 @@ def test_the_chain_hashes_the_pseudonym_not_the_id():
         payload=chain.pseudonymise_payload(consent("c-1")),
         subject_id=chain.pseudonym(SUBJECT),
     )
-    assert chain.link(clear, 1, chain.GENESIS) == chain.link(pseudonymised, 1, chain.GENESIS)
+    assert chain.link(clear, 1, chain.GENESIS) == chain.link(
+        pseudonymised, 1, chain.GENESIS
+    )
     assert SUBJECT not in chain.canonical(clear)
     # Another person's pseudonym is not the same record.
     other = DomainEventORM(
@@ -306,7 +318,9 @@ async def test_a_record_given_someone_elses_pseudonym_is_found(client, factory):
 @pytest.mark.rule("L-11", "L-18")
 @pytest.mark.asyncio
 async def test_the_subject_still_reads_their_pseudonymised_history(
-    client, person_client, factory  # noqa: F811
+    client,
+    person_client,  # noqa: F811
+    factory,
 ):
     await ingest(client, consent("c-old"), consent("c-new", when=NEW))
     async with factory() as s:

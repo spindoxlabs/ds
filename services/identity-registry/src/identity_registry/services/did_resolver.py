@@ -104,7 +104,9 @@ class _AdmittedAddressBackend(httpcore.AsyncNetworkBackend):
     hostname from the request, not from what was connected to.
     """
 
-    def __init__(self, *, dev: bool, allowance: InternalAllowance | None = None) -> None:
+    def __init__(
+        self, *, dev: bool, allowance: InternalAllowance | None = None
+    ) -> None:
         self._dev = dev
         self._allowance = allowance
         self._inner = httpcore.AnyIOBackend()
@@ -123,7 +125,9 @@ class _AdmittedAddressBackend(httpcore.AsyncNetworkBackend):
         except (OSError, TimeoutError) as exc:
             raise httpcore.ConnectError(f"cannot resolve {host}: {exc}") from exc
         try:
-            address = admitted_address(host, addresses, dev=self._dev, allowance=self._allowance)
+            address = admitted_address(
+                host, addresses, dev=self._dev, allowance=self._allowance
+            )
         except DidResolutionError as exc:
             raise httpcore.ConnectError(str(exc)) from exc
         return await self._inner.connect_tcp(

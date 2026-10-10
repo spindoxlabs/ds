@@ -97,18 +97,17 @@ def declared_clients() -> list[dict]:
     return [c for c in merged.values() if c["default_scopes"]]
 
 
-def fetch_token(client_id: str) -> str:
+def fetch_token(client_id: str, scope: str | None = None) -> str:
     """A real `client_credentials` token, or skip with a reason that helps."""
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": _dev_secret(client_id),
+    }
+    if scope:
+        data["scope"] = scope
     try:
-        response = httpx.post(
-            TOKEN_URL,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": client_id,
-                "client_secret": _dev_secret(client_id),
-            },
-            timeout=10,
-        )
+        response = httpx.post(TOKEN_URL, data=data, timeout=10)
     except httpx.HTTPError as exc:
         pytest.skip(f"Keycloak is not reachable at {TOKEN_URL}: {exc}")
 
