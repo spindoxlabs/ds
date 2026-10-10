@@ -42,7 +42,7 @@ dependencies {
     compileOnly("org.eclipse.edc:json-ld-spi:$edcVersion")
     compileOnly("org.eclipse.edc:transform-spi:$edcVersion")
     compileOnly("org.eclipse.edc:control-plane-transform:$edcVersion")
-    compileOnly("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
+    compileOnly("jakarta.ws.rs:jakarta.ws.rs-api:4.0.0")
     // A policy that has been through EDC's JSON-LD expansion carries its right
     // operands as JsonString/JsonObject, not String — see Purposes.
     compileOnly("jakarta.json:jakarta.json-api:2.1.3")
@@ -80,7 +80,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("jakarta.json:jakarta.json-api:2.1.3")
     // The resume route takes the caller's `SecurityContext`; compileOnly for main.
-    testImplementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
+    testImplementation("jakarta.ws.rs:jakarta.ws.rs-api:4.0.0")
     // The forked JsonObjectFromPolicyTransformer is the highest-risk file here —
     // a silent revert republishes unreadable policies while everything looks
     // healthy — so its test drives the class rather than reading its source.
