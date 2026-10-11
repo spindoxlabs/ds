@@ -30,7 +30,7 @@ get wrong: a run where every dataset failed used to answer `200`, and a job that
 checked only the code reported success over an empty catalogue.
 */}}
 {{- $isProvider := has .Values.participant.role (list "provider" "both") -}}
-{{- if and .Values.sync.enabled $isProvider .Values.governance.configMap }}
+{{- if and .Values.sync.enabled $isProvider (include "conn.governanceConfigMap" .) }}
 apiVersion: batch/v1
 kind: Job
 metadata:

@@ -53,7 +53,7 @@ environments:
 
   # ── A local cluster ─────────────────────────────────────────────────────────
   #
-  #   helm/minikube/minikube.sh all        (docs/deployment/local-cluster.md)
+  #   helm/minikube/standalone.sh all      (docs/deployment/local-cluster.md)
   #
   # The charts under the production posture on minikube, generic names only: the
   # secret policy runs (this is not `example`), the secrets are generated into
@@ -111,6 +111,121 @@ environments:
 {{- $global = merge (dict "image" (dict "tag" .)) $global }}
 {{- end }}
 
+{{- /*
+================================================================================
+The participant profiles (docs/deployment/configuration.md, "Participants")
+
+Each `participants[]` entry is a profile: a name, an explicit `enabled`, a role, and
+feature switches (`portal`, `federatedCatalog`, `collector`, `enrolment`), each a
+block with a boolean `enabled`. Everything else (namespace, hosts, DID, databases,
+client ids) is derived from the name. `participantDefaults` is merged under every
+entry, the entry winning; it may carry only the chart blocks, because a merge does
+not let an entry's `false` override a default's `true`, so a default switch could
+never be turned off again.
+
+`$participants` is the result: the **enabled** entries only, merged and validated.
+Every release, URL, check and list below ranges over it, never over
+`.Values.participants`, so a disabled entry renders nothing at all and is not even
+validated beyond its name and flag.
+================================================================================
+*/}}
+{{- $pdefaults := .Values | get "participantDefaults" dict | default dict }}
+{{- range $key, $_ := $pdefaults }}
+{{- if not (has $key (list "connector" "provenance" "edc")) }}
+{{- fail (printf "participantDefaults.%s cannot be set: only the chart blocks connector, provenance and edc can have a default (a default switch or identity could not be overridden by an entry's false or empty value)" $key) }}
+{{- end }}
+{{- end }}
+{{- $participants := list }}
+{{- $seen := dict }}
+{{- range $i, $raw := .Values.participants | default list }}
+{{- $name := $raw | get "name" "" | toString }}
+{{- if not $name }}
+{{- fail (printf "participants[%d].name is required" $i) }}
+{{- end }}
+{{- if hasKey $seen $name }}
+{{- fail (printf "participants[%s] is declared twice" $name) }}
+{{- end }}
+{{- $_ := set $seen $name true }}
+{{- if not (hasKey $raw "enabled") }}
+{{- fail (printf "participants[%s].enabled is required: true or false. A participant is never on or off by omission" $name) }}
+{{- end }}
+{{- if not (kindIs "bool" $raw.enabled) }}
+{{- fail (printf "participants[%s].enabled must be a boolean (true or false), not %q" $name (toString $raw.enabled)) }}
+{{- end }}
+{{- if $raw.enabled }}
+{{- $p := mergeOverwrite (deepCopy $pdefaults) (deepCopy $raw) }}
+{{- if not (has ($p | get "role" "" | toString) (list "provider" "consumer" "both")) }}
+{{- fail (printf "participants[%s].role must be provider, consumer or both, not %q" $name ($p | get "role" "" | toString)) }}
+{{- end }}
+{{- range $feature := list "portal" "federatedCatalog" "collector" "enrolment" }}
+{{- $block := $p | get $feature dict | default dict }}
+{{- if and (hasKey $block "enabled") (not (kindIs "bool" $block.enabled)) }}
+{{- fail (printf "participants[%s].%s.enabled must be a boolean (true or false), not %q" $name $feature (toString $block.enabled)) }}
+{{- end }}
+{{- end }}
+{{- $participants = append $participants $p }}
+{{- end }}
+{{- end }}
+{{- $byName := dict }}
+{{- range $participants }}{{ $_ := set $byName .name . }}{{ end }}
+
+{{- /* The databases: <namePrefix><base>[_<participant>], each with a login role of the same name. */}}
+{{- $dbs := .Values.global.postgres | get "databases" dict | default dict }}
+{{- $dbPrefix := $dbs | get "namePrefix" "" }}
+{{- $anchorDb := printf "%s%s" $dbPrefix ($dbs | get "identityRegistry" "identity_registry") }}
+{{- $dbBase := dict "identityRegistry" ($dbs | get "identityRegistryPrefix" "identity_registry") "connector" ($dbs | get "connectorPrefix" "connector") "provenance" ($dbs | get "provenancePrefix" "provenance") "edc" ($dbs | get "edcPrefix" "edc") }}
+
+{{- /* ds2: one portal host per participant; two portals on one host fail. */}}
+{{- $portalHosts := dict }}
+{{- $portalHostOf := dict }}
+{{- range $participants }}
+{{- $pp := . }}
+{{- if dig "portal" "enabled" false . }}
+{{- $host := dig "portal" "host" "" . | default (printf "%s.%s" ($global.hosts.portal | default "portal") $global.baseDomain) }}
+{{- if hasKey $portalHosts $host }}
+{{- fail (printf "participants %s and %s both put their portal on %s: one host, one portal (its Ingress and its oauth2-proxy's /oauth2 path). Set participants[].portal.host for one of them" (index $portalHosts $host) $pp.name $host) }}
+{{- end }}
+{{- $_ := set $portalHosts $host .name }}
+{{- $_ := set $portalHostOf .name $host }}
+{{- end }}
+{{- end }}
+
+{{- /* ds1: the collector switch, each holder an enabled participant (ADR-0026). */}}
+{{- $collectorPairs := list }}
+{{- range $participants }}
+{{- $c := . }}
+{{- if dig "collector" "enabled" false $c }}
+{{- $holders := dig "collector" "holders" list $c }}
+{{- if not $holders }}
+{{- fail (printf "participants[%s].collector.holders is empty: a collector collects consent for at least one holder, an enabled participant whose connector holds it (ADR-0026)" $c.name) }}
+{{- end }}
+{{- range $holders }}
+{{- if not (hasKey $byName (toString .)) }}
+{{- fail (printf "participants[%s].collector.holders names %q, which is not an enabled participant: the pair could never form" $c.name (toString .)) }}
+{{- end }}
+{{- $h := index $byName (toString .) }}
+{{- $collectorPairs = append $collectorPairs (dict "holderDid" ($h.did | default (printf "did:web:%s.%s" $h.name $global.baseDomain)) "collectorDid" ($c.did | default (printf "did:web:%s.%s" $c.name $global.baseDomain))) }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- /* ds4: enrolment of co-hosted participants, off by default. */}}
+{{- $enrolments := list }}
+{{- range $participants }}
+{{- if dig "enrolment" "enabled" false . }}
+{{- $roles := dig "enrolment" "roles" list . }}
+{{- if not $roles }}
+{{- $roles = index (dict "provider" (list "provider") "consumer" (list "consumer") "both" (list "provider" "consumer")) .role }}
+{{- end }}
+{{- $scopes := dig "enrolment" "scopes" list . }}
+{{- if not $scopes }}
+{{- $scopes = list "dataspaces.query" }}
+{{- if has .role (list "consumer" "both") }}{{ $scopes = append $scopes (printf "owner:%s:member" .name) }}{{ end }}
+{{- end }}
+{{- $enrolments = append $enrolments (dict "alias" .name "roles" $roles "scopes" $scopes) }}
+{{- end }}
+{{- end }}
+
 
 {{- /*
 ================================================================================
@@ -148,13 +263,46 @@ recorded in the deployment's D2 work log). They are covered by R2.
 {{- $armed := ne .Environment.Name "example" }}
 {{- $sec := .Values | get "secrets" dict }}
 {{- $psecAll := $sec | get "participants" dict }}
-{{- $enabled := list }}
-{{- range .Values.participants }}{{ if .enabled }}{{ $enabled = append $enabled . }}{{ end }}{{ end }}
+{{- $enabled := $participants }}
 
 {{- /* presence */}}
 {{- range $enabled }}
 {{- if not (hasKey $psecAll .name) }}
 {{- fail (printf "secret policy: secrets.participants.%s is missing — participant %q is enabled, and its secrets come from the deployment's secrets file (passed down with the values)" .name .name) }}
+{{- end }}
+{{- end }}
+
+{{- /* presence — every database password, under the database's own name */}}
+{{- $pg := $sec | get "postgres" dict | default dict }}
+{{- if not (hasKey $pg $anchorDb) }}
+{{- fail (printf "secret policy: secrets.postgres.%s is missing — the anchor's database password (the key is the database name, global.postgres.databases)" $anchorDb) }}
+{{- end }}
+{{- range $enabled }}
+{{- $pp := . }}
+{{- range $svc := list "identityRegistry" "connector" "provenance" "edc" }}
+{{- $db := printf "%s%s_%s" $dbPrefix (index $dbBase $svc) (replace "-" "_" $pp.name) }}
+{{- if not (hasKey $pg $db) }}
+{{- fail (printf "secret policy: secrets.postgres.%s is missing — participant %q is enabled, and every database password is keyed by the database name (global.postgres.databases)" $db $pp.name) }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- /* enrolment — a code per co-hosted participant: present, long enough, never shared */}}
+{{- $codes := dict }}
+{{- range $enabled }}
+{{- $pp := . }}
+{{- if dig "enrolment" "enabled" false . }}
+{{- $code := index $psecAll .name | get "enrolmentCode" "" | toString | trim }}
+{{- if not $code }}
+{{- fail (printf "secret policy: secrets.participants.%s.enrolmentCode is missing — participants[%s].enrolment.enabled is true, and the anchor registers that code for the participant to spend (helm/tools/generate_secrets.py generates one)" .name .name) }}
+{{- end }}
+{{- if lt (len $code) 32 }}
+{{- fail (printf "secret policy: secrets.participants.%s.enrolmentCode is shorter than 32 characters — generate it (helm/tools/generate_secrets.py)" .name) }}
+{{- end }}
+{{- if hasKey $codes $code }}
+{{- fail (printf "secret policy: secrets.participants.%s.enrolmentCode equals secrets.participants.%s.enrolmentCode — one code, one organisation" $pp.name (index $codes $code)) }}
+{{- end }}
+{{- $_ := set $codes $code .name }}
 {{- end }}
 {{- end }}
 
@@ -282,10 +430,8 @@ releases:
     values:
       - authorityNamespace: {{ .Values.global.namespaces.authority | quote }}
         participantNamespaces:
-        {{- range .Values.participants }}
-        {{- if .enabled }}
+        {{- range $participants }}
           - {{ printf "%s%s" $.Values.global.namespaces.participantPrefix .name | quote }}
-        {{- end }}
         {{- end }}
 
   # ── Dataspace authority ─────────────────────────────────────────────────────
@@ -306,9 +452,14 @@ releases:
         # because a hand-maintained copy is a list that silently omits the
         # participant added last (`PT-11`, and the same class as `IR-10`: a
         # feature with no supply path is a feature that is off in production).
-        connectorUrls: {{ $urls := list }}{{ range .Values.participants }}{{ if .enabled }}{{ $urls = append $urls (printf "http://ds-connector-%s.%s%s.svc.cluster.local:30001" .name $.Values.global.namespaces.participantPrefix .name) }}{{ end }}{{ end }}{{ join "," $urls | quote }}
+        connectorUrls: {{ $urls := list }}{{ range $participants }}{{ $urls = append $urls (printf "http://ds-connector-%s.%s%s.svc.cluster.local:30001" .name $.Values.global.namespaces.participantPrefix .name) }}{{ end }}{{ join "," $urls | quote }}
         credentialService:
           expose: {{ .Values.authority.identityRegistry.credentialService.expose }}
+        # In-cluster callers outside the participant namespaces (the host
+        # platform's onboarding), as the connector's `networkPolicy.ingressFrom`.
+        networkPolicy:
+          ingressFrom:
+            {{- toYaml (dig "networkPolicy" "ingressFrom" list .Values.authority.identityRegistry) | nindent 12 }}
         # ADR-0029, the dataspace's own: the same block reaches every registry.
         didWeb:
           {{- toYaml (.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
@@ -318,6 +469,14 @@ releases:
         # (`seedItems` was the next one).
         bootstrap:
           {{- toYaml .Values.authority.identityRegistry.bootstrap | nindent 10 }}
+        # ds1: the pairs `holder ← collector` of every participant with the
+        # collector switch on (ADR-0026), added once both are active.
+        collectors:
+          {{- toYaml $collectorPairs | nindent 10 }}
+        # ds4: the co-hosted participants whose code the anchor's hook registers.
+        enrolment:
+          participants:
+            {{- toYaml $enrolments | nindent 12 }}
         keycloak:
           sync:
             enabled: {{ .Values.global.keycloak.sync.enabled }}
@@ -329,14 +488,19 @@ releases:
             {{- toYaml (.Values.secrets.organisationClients | default dict) | nindent 12 }}
           identityRegistryEncryptionKey: {{ .Values.secrets.identityRegistryEncryptionKey | quote }}
           serviceClientSecret: {{ .Values.secrets.svcDsIdentityRegistrySecret | quote }}
-          dbPassword: {{ .Values.secrets.postgres.identity_registry | quote }}
+          dbPassword: {{ index .Values.secrets.postgres $anchorDb | quote }}
+          # ds4: the code of each co-hosted participant with enrolment on, which
+          # the anchor's hook registers (empty otherwise).
+          enrolmentCodes:
+            {{- range $enrolments }}
+            {{ .alias }}: {{ index $psecAll .alias "enrolmentCode" | quote }}
+            {{- end }}
           keycloakAdminUsername: {{ .Values.secrets.keycloakAdminUsername | quote }}
           keycloakAdminPassword: {{ .Values.secrets.keycloakAdminPassword | quote }}
 
   # ── Participants ────────────────────────────────────────────────────────────
 {{- $root := . }}
-{{- range .Values.participants }}
-{{- if .enabled }}
+{{- range $participants }}
 {{- $p := . }}
 {{- $ns := printf "%s%s" $root.Values.global.namespaces.participantPrefix $p.name }}
 {{- $psec := index $root.Values.secrets.participants $p.name }}
@@ -406,8 +570,14 @@ through them, so a block naming one fails rather than silently competing.
         # was fed the `svc-edc` secret under `svc-ds-identity-registry`'s name.
         secrets:
           identityRegistryEncryptionKey: {{ $psec.identityRegistryEncryptionKey | quote }}
-          dbPassword: {{ index $root.Values.secrets.postgres (printf "identity_registry_%s" (replace "-" "_" $p.name)) | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "%s%s_%s" $dbPrefix $dbBase.identityRegistry (replace "-" "_" $p.name)) | quote }}
           participantStsSecret: {{ $psec.stsSecret | quote }}
+          {{- if dig "enrolment" "enabled" false $p }}
+          enrolmentCode: {{ $psec.enrolmentCode | quote }}
+          {{- end }}
+        # ds4: spend the anchor-registered code once, if not enrolled.
+        enrolment:
+          enabled: {{ dig "enrolment" "enabled" false $p }}
 
   - name: ds-edc-{{ $p.name }}
     namespace: {{ $ns }}
@@ -432,7 +602,7 @@ through them, so a block naming one fails rather than silently competing.
           {{- toYaml ($root.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
       - {{ $blocks.edc | toYaml | nindent 8 }}
       - secrets:
-          dbPassword: {{ index $root.Values.secrets.postgres (printf "edc_%s" (replace "-" "_" $p.name)) | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "%s%s_%s" $dbPrefix $dbBase.edc (replace "-" "_" $p.name)) | quote }}
           edcCallbackKey: {{ $psec.edcCallbackKey | quote }}
           edcControlApiKey: {{ $psec.edcControlApiKey | quote }}
           connectorClientSecret: {{ $psec.connectorClientSecret | quote }}
@@ -456,7 +626,7 @@ through them, so a block naming one fails rather than silently competing.
           {{- toYaml ($root.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
       - {{ $blocks.provenance | toYaml | nindent 8 }}
       - secrets:
-          dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" (replace "-" "_" $p.name)) | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "%s%s_%s" $dbPrefix $dbBase.provenance (replace "-" "_" $p.name)) | quote }}
           subjectPseudonymKey: {{ $psec.provenanceSubjectPseudonymKey | quote }}
           # No `trustAnchorPublicJwk` here since `DID-17`: provenance verifies
           # `X-User-VC` against the key the anchor's DID document publishes.
@@ -489,9 +659,15 @@ through them, so a block naming one fails rather than silently competing.
       # identity registry gets; a participant's own `connector.didWeb` overrides it.
       - didWeb:
           {{- toYaml ($root.Values.authority.identityRegistry | get "didWeb" dict) | nindent 10 }}
+      {{- $myPortal := "" }}{{ if hasKey $portalHostOf $p.name }}{{ $myPortal = index $portalHostOf $p.name }}{{ end }}
+      {{- with $myPortal }}
+      # ds2: this participant's own portal, the link its notifications carry.
+      - notify:
+          portalBaseUrl: {{ printf "https://%s" . | quote }}
+      {{- end }}
       - {{ $blocks.connector | toYaml | nindent 8 }}
       - secrets:
-          dbPassword: {{ index $root.Values.secrets.postgres (printf "connector_%s" (replace "-" "_" $p.name)) | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "%s%s_%s" $dbPrefix $dbBase.connector (replace "-" "_" $p.name)) | quote }}
           # The organisation client, not `svc-ds-connector` — that one is an
           # audience only (plan `the-management-api-is-v3-behind-one-key`).
           clientSecret: {{ $psec.organisationClientSecret | quote }}
@@ -527,9 +703,9 @@ through them, so a block naming one fails rather than silently competing.
   */}}
   {{- $consumerName := "" }}
   {{- $consumerNs := "" }}
-  {{- range $root.Values.participants }}
+  {{- range $participants }}
     {{- /* `both` mounts the consumer router too (`settings.is_consumer`). */}}
-    {{- if and .enabled (has (.role | default "") (list "consumer" "both")) (not $consumerName) }}
+    {{- if and (has (.role | default "") (list "consumer" "both")) (not $consumerName) }}
       {{- $consumerName = printf "ds-connector-%s" .name }}
       {{- $consumerNs = printf "%s%s" $root.Values.global.namespaces.participantPrefix .name }}
     {{- end }}
@@ -581,6 +757,8 @@ through them, so a block naming one fails rather than silently competing.
       - participant:
           name: {{ $p.name | quote }}
           role: {{ $p.role | quote }}
+        # ds2: the portal's host, which is this proxy's too (one cookie domain).
+        host: {{ index $portalHostOf $p.name | quote }}
         secrets:
           cookieSecret: {{ $root.Values.secrets.oauth2ProxyCookieSecret | quote }}
           clientSecret: {{ $root.Values.secrets.oauth2ProxyClientSecret | quote }}
@@ -601,9 +779,9 @@ through them, so a block naming one fails rather than silently competing.
         # does (chart parity row 16).
         federatedCatalog:
           enabled: {{ dig "federatedCatalog" "enabled" false $p }}
+        host: {{ index $portalHostOf $p.name | quote }}
       - {{ $blocks.portal | toYaml | nindent 8 }}
       - secrets:
           portalServiceClientSecret: {{ $root.Values.secrets.svcDsPortalSecret | quote }}
-{{- end }}
 {{- end }}
 {{- end }}

@@ -75,6 +75,7 @@ keypair. It is idempotent — existing key files are preserved, never overwritte
 | `participants.<name>.connectorClientSecret` | ds-edc | this EDC's own Keycloak client for the connector's internal API and webhooks. **The extension refuses to start without it** |
 | `participants.<name>.edcVault.edrSigningPrivateJwk` | ds-edc | signs Endpoint Data References. Distinct from any DID key |
 | `participants.<name>.stsSecret` | ds-edc | the participant's STS client secret, as registered in the identity registry |
+| `participants.<name>.enrolmentCode` *(only with `enrolment.enabled`)* | the anchor's enrolment hook and the participant's enrolment Job | the single-use code that admits the organisation (`ir-cli org enrolment-token --code-env`). Alone it binds nothing: the request must also be signed by the key the participant's own registry generated and publishes. Spent, it enrols nothing. At least 32 characters, one per participant (the render and the preflight refuse a shared one) |
 | `participants.<name>.publisherSecret` *(optional)* | ds-connector's sync hook Job | `svc-ds-publisher`'s Keycloak secret, and only where `sync.clientId` names it. Blast radius **deliberately small**: that client holds `connector.provider.read` + `.write` and no `management-api:*`, so a leak publishes and unpublishes this participant's catalogue and reaches no EDC. That is the whole reason to prefer it over the organisation client for a credential that drives a deployment |
 
 !!! danger "`identityRegistryEncryptionKey` must be backed up outside the cluster"
@@ -96,7 +97,8 @@ keypair. It is idempotent — existing key files are preserved, never overwritte
 | `svcDsPortalSecret` | `ds-portal` |
 | `oauth2ProxyCookieSecret`, `oauth2ProxyClientSecret` | `ds-oauth2-proxy` |
 | `svcDsOnboardingSecret`, `svcDsDatasetApiSecret`, `svcDsConnectorSecret`, `svcEdcSecret` | no chart — the realm, and the process outside ds that authenticates as the client |
-| `postgres.<db>` | the owning service |
+| `postgres.<database name>` | the owning service. The key is the database name the charts derive (`global.postgres.databases`, `namePrefix` included): `identity_registry`, `connector_<name>`, … or `ds_identity_registry`, `ds_connector_<name>`, … A missing key fails the render, naming it |
+| `participants.<name>.enrolmentCode` | the anchor's `ds-identity-registry-enrolment` Secret and the participant's own registry Secret |
 | `participants.<name>.identityRegistryEncryptionKey`, `.stsSecret` | the participant's own `ds-identity-registry-<name>` (and `stsSecret` also its EDC vault) |
 | `participants.<name>.edcCallbackKey` | its EDC vault **and** its connector — one value, two holders |
 | `participants.<name>.edcControlApiKey`, `.connectorClientSecret`, `.edcVault.edrSigningPrivateJwk` | its `ds-edc` |

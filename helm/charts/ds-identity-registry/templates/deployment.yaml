@@ -18,6 +18,14 @@ spec:
       annotations:
         # Roll the pods when the rendered secret changes.
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if .Values.bootstrap.seedFiles }}
+        # ds3: the seed is this chart's, so its digest is too: a changed owners.yaml
+        # or agreement rolls the anchor and the bootstrap applies it.
+        checksum/seed: {{ toJson .Values.bootstrap.seedFiles | sha256sum }}
+        {{- end }}
+        {{- if .Values.bootstrap.governanceFiles }}
+        checksum/governance: {{ toJson .Values.bootstrap.governanceFiles | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -51,11 +59,11 @@ spec:
         # encrypts it with its own key, and publishes its own DID document. The
         # anchor never sees the private half (`D-47`).
         #
-        # Enrolment is deliberately *not* run here. It needs a single-use code
-        # an operator issues, and this container runs on every pod start —
-        # baking a credential into a Deployment so it can be replayed at every
-        # restart is the shape this whole change removes. Enrol once, out of
-        # band: `ir-cli participant init --code <code>`.
+        # Enrolment is deliberately *not* run here: the anchor verifies it
+        # against this participant's DID document, which only the running
+        # container serves (through ds-edc's Ingress, a later release). Enrol
+        # once, out of band (`ir-cli participant init --code <code>`), or let
+        # the chart do it with `enrolment.enabled` (enrolment.yaml).
         - name: identity
           image: {{ include "ds.image" . }}
           imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
@@ -119,12 +127,12 @@ spec:
             {{- include "ds.containerSecurityContext" . | nindent 12 }}
           volumeMounts:
             {{- include "ds.tmpVolumeMount" . | nindent 12 }}
-            {{- if .Values.bootstrap.seedConfigMap }}
+            {{- if include "ir.seedConfigMap" . }}
             - name: seed
               mountPath: {{ .Values.bootstrap.seedMountPath }}
               readOnly: true
             {{- end }}
-            {{- if .Values.bootstrap.governanceConfigMap }}
+            {{- if include "ir.governanceConfigMap" . }}
             - name: governance
               mountPath: {{ .Values.bootstrap.governanceMountPath }}
               readOnly: true
@@ -197,10 +205,10 @@ spec:
           {{- include "ds.resources" . | nindent 10 }}
       volumes:
         {{- include "ds.tmpVolume" . | nindent 8 }}
-        {{- if .Values.bootstrap.seedConfigMap }}
+        {{- if include "ir.seedConfigMap" . }}
         - name: seed
           configMap:
-            name: {{ .Values.bootstrap.seedConfigMap }}
+            name: {{ include "ir.seedConfigMap" . }}
             {{- with .Values.bootstrap.seedItems }}
             # Nested paths a ConfigMap key cannot spell (row 21).
             items:
@@ -210,10 +218,10 @@ spec:
               {{- end }}
             {{- end }}
         {{- end }}
-        {{- if .Values.bootstrap.governanceConfigMap }}
+        {{- if include "ir.governanceConfigMap" . }}
         - name: governance
           configMap:
-            name: {{ .Values.bootstrap.governanceConfigMap }}
+            name: {{ include "ir.governanceConfigMap" . }}
         {{- end }}
         {{- if .Values.keycloak.sync.enabled }}
         - name: keycloak-config

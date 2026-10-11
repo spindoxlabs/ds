@@ -188,6 +188,8 @@ def pilot_secrets(values: dict) -> dict:
     participants = {}
     postgres = {"identity_registry": _token()}
     for p in values["participants"]:
+        if p.get("enabled") is not True:
+            continue
         name = p["name"]
         db = name.replace("-", "_")
         for prefix in ("identity_registry", "connector", "provenance", "edc"):
@@ -210,6 +212,8 @@ def pilot_secrets(values: dict) -> dict:
             "stsSecret": _token(),
             "identityRegistryEncryptionKey": _token(),
         }
+        if (p.get("enrolment") or {}).get("enabled") is True:
+            participants[name]["enrolmentCode"] = secrets.token_urlsafe(32)
     return {
         "secrets": {
             "identityRegistryEncryptionKey": _token(),

@@ -46,6 +46,11 @@ existingSecret: ""
 
 networkPolicy:
   egress: []
+  # In-cluster callers outside the participant namespaces (which are admitted by
+  # their label), e.g. the host platform's onboarding:
+  #   - {namespace: host-platform, podLabels: {app.kubernetes.io/name: onboarding}}
+  # A namespace is required: an empty namespaceSelector admits every namespace.
+  ingressFrom: []
 
 # ── Role ──────────────────────────────────────────────────────────────────────
 #
@@ -145,6 +150,11 @@ bootstrap:
   # items mounts ONLY those.
   #   - {key: participation-en.md, path: content/participation-en.md}
   seedItems: []
+  # ds3: the seed's content, key → file (agreements.yaml, owners.yaml,
+  # bootstrap.sh, texts). Set, the chart renders the ConfigMap `<release>-seed`
+  # from it, mounts it, and rolls the pod when it changes (checksum/seed).
+  # Exclusive with `seedConfigMap` (both set fails the render).
+  seedFiles: {}
   # `ir-cli org apply` walks owners.yaml entries that carry a `dataspace:` block
   # all the way to a promoted participant. It hands them **no STS secret**
   # (`D-51`): how a party authenticates to its own STS is not the anchor's to
@@ -155,6 +165,10 @@ bootstrap:
   # own governance is not this chart's to carry, so it arrives as a ConfigMap
   # the deployment builds — the same shape `seedConfigMap` already uses.
   governanceConfigMap: ""
+  # ds3: the governance files' content, key → file (`<participant>.governance.yaml`).
+  # Rendered as `<release>-governance`, with checksum/governance on the pod.
+  # Exclusive with `governanceConfigMap`.
+  governanceFiles: {}
   governanceMountPath: /governance
   orgApply:
     # Empty is the pre-existing invocation and stays the default: a
@@ -186,6 +200,27 @@ bootstrap:
     # governance file naming an owner that carries no DID fails review rather
     # than deploy.
     dryRun: false
+
+# ── Collector pairs (ADR-0026), trust-anchor only ─────────────────────────────
+# `holder ← collector` pairs a Job adds once both are active participants
+# (collectors.yaml). The helmfile renders them from the participants'
+# `collector` switch.
+#   - {holderDid: did:web:example-dso.ds.example.org, collectorDid: did:web:example-rec.ds.example.org}
+collectors: []
+
+# ── Enrolment of co-hosted participants (enrolment.yaml) ──────────────────────
+# Off by default. On the trust anchor: the participants whose code its hook
+# registers ({alias, roles, scopes}, codes in `secrets.enrolmentCodes`). On a
+# participant: `enabled` runs the Job that spends `secrets.enrolmentCode` once.
+enrolment:
+  enabled: false # role=participant
+  participants: [] # role=trust-anchor
+  ttlDays: 14
+  # The participant's and the collector Job's bound: how long they wait for the
+  # DID document to resolve and the anchor to admit the code.
+  activeDeadlineSeconds: 1800
+  retrySeconds: 20
+  backoffLimit: 3
 
 # Externally reachable base URL of this registry, written into provisioning
 # bundles. Defaults to https://<trust-anchor domain>.
@@ -249,6 +284,10 @@ secrets:
   # secret and, for a consent collector, the collector client's.
   #   {example-org: {connectorSecret: ..., collectorSecret: ...}}
   organisationClients: {}
+  # ds4, trust-anchor: alias → the code its hook registers.
+  enrolmentCodes: {}
+  # ds4, participant: the code its enrolment Job spends.
+  enrolmentCode: ""
 
 # ── Global fallbacks ──────────────────────────────────────────────────────────
 # Real values come from helm/values.yaml via helmfile. These exist so the chart

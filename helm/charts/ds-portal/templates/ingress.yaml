@@ -1,5 +1,5 @@
 {{- if .Values.ingress.enabled }}
-{{- $host := printf "%s.%s" (((.Values.global).hosts).portal | default "portal") (.Values.global).baseDomain }}
+{{- $host := include "portal.host" . }}
 # =============================================================================
 # The only human-facing host — portal.<baseDomain>. All paths go to the portal;
 # it is SSR, so there is no per-API fan-in (the dev Caddy /api/* routes exist

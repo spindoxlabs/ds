@@ -11,7 +11,7 @@ sync refused (fewer). It compares counts, not ids: an id swap of equal size
 passes, and the sync Job's own `errors` check covers that.
 */}}
 {{- $provider := has .Values.participant.role (list "provider" "both") }}
-{{- if and .Values.tests.enabled $provider .Values.governance.configMap }}
+{{- if and .Values.tests.enabled $provider (include "conn.governanceConfigMap" .) }}
 {{- $script := `
 import os, sys
 import httpx
@@ -50,6 +50,6 @@ if len(assets) != len(expected):
 {{- $env := include "conn.env" . | fromYamlArray }}
 {{- $env = append $env (dict "name" "TEST_CONNECTOR_URL" "value" (printf "http://%s:%v" (include "ds.fullname" .) .Values.service.port)) }}
 {{ include "ds.testPod" (dict "ctx" . "name" "catalogue" "script" $script "env" $env
-     "volumes" (list (dict "name" "governance" "configMap" (dict "name" .Values.governance.configMap)) (dict "name" "tmp" "emptyDir" (dict)))
+     "volumes" (list (dict "name" "governance" "configMap" (dict "name" (include "conn.governanceConfigMap" .))) (dict "name" "tmp" "emptyDir" (dict)))
      "volumeMounts" (list (dict "name" "governance" "mountPath" .Values.governance.mountPath "readOnly" true) (dict "name" "tmp" "mountPath" "/tmp"))) }}
 {{- end }}

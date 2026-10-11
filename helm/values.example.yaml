@@ -71,9 +71,27 @@ participants:
       crawlInterval: 300
 
     portal:
-      # The portal is deployed alongside exactly one participant.
       enabled: true
+      # "" → <global.hosts.portal>.<baseDomain>. Every participant may have a
+      # portal; two on one host fail the render, so a second one sets its own.
+      host: ""
       replicaCount: 1
+
+    # Collects its members' consent for holders: enabled participants whose
+    # connector holds that consent (ADR-0026). The anchor adds each pair once
+    # both are active.
+    collector:
+      enabled: false
+      holders: [] # e.g. [grid-operator]
+
+    # Enrolment through the charts, for a participant hosted with the anchor:
+    # the anchor's hook registers secrets.participants.<name>.enrolmentCode and
+    # this participant's registry spends it once. Off: enrol out of band
+    # (docs/deployment/operations.md, "Enrolment").
+    enrolment:
+      enabled: false
+      roles: [] # [] → from role
+      scopes: [] # [] → dataspaces.query (+ owner:<name>:member for a consumer)
 
   # A **second provider**, and one shaped differently from the first (`D-54`,
   # `DID-15`): a grid operator shares its own infrastructure data and has no

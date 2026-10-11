@@ -12,6 +12,13 @@ participant:
   name: provider
   role: provider
 
+# This portal's public host. "" → <global.hosts.portal>.<global.baseDomain>. A
+# dataspace with a portal per participant gives each its own (the helmfile's
+# `participants[].portal.host`, and it refuses two portals on one host). ORIGIN,
+# the Ingress and the sign-in URL follow it; the oauth2-proxy release must be
+# given the same host.
+host: ""
+
 image: {registry: "", repository: "", tag: "", digest: "", pullPolicy: ""}
 imagePullSecrets: []
 nameOverride: ""

@@ -213,9 +213,11 @@ which is the thing `D-47` exists to rule out.
 {{- if .Values.database -}}
 {{- .Values.database -}}
 {{- else if eq (include "ir.role" .) "participant" -}}
-{{- printf "identity_registry_%s" (required "role=participant needs participant.name" .Values.participant.name) | replace "-" "_" -}}
+{{- $dbs := ((.Values.global).postgres).databases | default dict -}}
+{{- printf "%s%s_%s" ($dbs.namePrefix | default "") ($dbs.identityRegistryPrefix | default "identity_registry") (replace "-" "_" (required "role=participant needs participant.name" .Values.participant.name)) -}}
 {{- else -}}
-{{- (((.Values.global).postgres).databases).identityRegistry -}}
+{{- $dbs := ((.Values.global).postgres).databases | default dict -}}
+{{- printf "%s%s" ($dbs.namePrefix | default "") ($dbs.identityRegistry | default "identity_registry") -}}
 {{- end -}}
 {{- end -}}
 
@@ -265,4 +267,72 @@ from a CrashLoopBackOff into the diff, which is where `ir.role` already puts its
 {{- if $flags -}}
 {{- printf " %s" (join " " $flags) -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+ds3: the seed and governance ConfigMaps. `bootstrap.seedFiles` / `governanceFiles`
+(key → content, passed by the deployment) are rendered by this chart as
+`<release>-seed` / `<release>-governance`; `seedConfigMap` / `governanceConfigMap`
+name one the operator made. One source per mount: both set is a render error.
+*/}}
+{{- define "ir.seedConfigMap" -}}
+{{- $b := .Values.bootstrap -}}
+{{- if and $b.seedFiles $b.seedConfigMap -}}
+{{- fail "ds-identity-registry: bootstrap.seedFiles and bootstrap.seedConfigMap are both set — the chart renders the seed ConfigMap from seedFiles, so leave seedConfigMap empty (or drop seedFiles to mount your own)" -}}
+{{- end -}}
+{{- if $b.seedFiles -}}
+{{- printf "%s-seed" (include "ds.fullname" .) -}}
+{{- else -}}
+{{- $b.seedConfigMap -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ir.governanceConfigMap" -}}
+{{- $b := .Values.bootstrap -}}
+{{- if and $b.governanceFiles $b.governanceConfigMap -}}
+{{- fail "ds-identity-registry: bootstrap.governanceFiles and bootstrap.governanceConfigMap are both set — the chart renders the governance ConfigMap from governanceFiles, so leave governanceConfigMap empty (or drop governanceFiles to mount your own)" -}}
+{{- end -}}
+{{- if $b.governanceFiles -}}
+{{- printf "%s-governance" (include "ds.fullname" .) -}}
+{{- else -}}
+{{- $b.governanceConfigMap -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+ds4/ds1: the labels of the enrolment and collector Jobs' pods. Not the release's
+selector labels: a Ready Job pod carrying them would join the registry's Service
+endpoints, and a request for this participant's DID document (the anchor's, while
+it verifies the enrolment) could land on a pod that serves nothing. Their own
+NetworkPolicy (networkpolicy.yaml) selects them instead.
+*/}}
+{{- define "ir.jobInstance" -}}
+{{- printf "%s-enrolment" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "ir.jobPodLabels" -}}
+helm.sh/chart: {{ include "ds.chart" . }}
+app.kubernetes.io/name: {{ include "ds.name" . }}
+app.kubernetes.io/instance: {{ include "ir.jobInstance" . }}
+app.kubernetes.io/component: enrolment
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: dataspace
+{{- end -}}
+
+{{/* `example-rec` → `ENROLMENT_CODE_EXAMPLE_REC`, the anchor's env for one code. */}}
+{{- define "ir.enrolmentCodeEnv" -}}
+{{- printf "ENROLMENT_CODE_%s" (. | upper | replace "-" "_") -}}
+{{- end -}}
+
+{{/* Do the enrolment or collector Jobs render in this release? */}}
+{{- define "ir.anchorEnrols" -}}
+{{- if and (eq (include "ir.role" .) "trust-anchor") (.Values.enrolment.participants) -}}true{{- end -}}
+{{- end -}}
+
+{{- define "ir.participantEnrols" -}}
+{{- if and (eq (include "ir.role" .) "participant") .Values.enrolment.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{- define "ir.anchorPairs" -}}
+{{- if and (eq (include "ir.role" .) "trust-anchor") .Values.collectors -}}true{{- end -}}
 {{- end -}}

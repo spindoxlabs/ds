@@ -19,7 +19,9 @@ global:
   baseDomain: ds.example.org
 
   hosts:
-    portal: portal # portal.ds.example.org       — the only human-facing host
+    # portal.ds.example.org — the human-facing host. The default of every
+    # participant's `portal.host`; a second portal needs a host of its own.
+    portal: portal
     trustAnchor: trust-anchor # trust-anchor.ds.example.org — DID doc + StatusList2021
     users: users # users.ds.example.org        — user DID resolution (see note)
 
@@ -98,12 +100,19 @@ global:
     port: 5432
     sslMode: require
     databases:
+      # Prepended to EVERY ds database name (and its login role, which is the
+      # same name): `ds_` on a cluster the dataspace shares with a host platform
+      # gives ds_identity_registry, ds_connector_<participant>, …
+      namePrefix: ""
       identityRegistry: identity_registry
-      # per-participant databases are suffixed with the participant name:
-      #   connector_<participant>, provenance_<participant>, edc_<participant>
+      # per-participant databases are suffixed with the participant name (`-` →
+      # `_`): identity_registry_<participant>, connector_<participant>,
+      # provenance_<participant>, edc_<participant>
+      identityRegistryPrefix: identity_registry
       connectorPrefix: connector
       provenancePrefix: provenance
       edcPrefix: edc
+      # Each password is secrets.postgres.<database name> (secrets.example.yaml).
 
   # ── Keycloak — externally managed, never installed by these charts ──────────
   # See docs/deployment/keycloak.md for the realm/client contract.
@@ -206,6 +215,13 @@ authority:
     credentialService:
       expose: false
 
+    # In-cluster callers outside the participant namespaces, admitted to the
+    # anchor's port: the host platform's onboarding (it calls /owners,
+    # /memberships and /admin, which are on no Ingress). Namespace required.
+    #   ingressFrom: [{namespace: host-platform, podLabels: {app.kubernetes.io/name: onboarding}}]
+    networkPolicy:
+      ingressFrom: []
+
     # did:web internal allowance (ADR-0029), forwarded to every identity registry and
     # to every participant's connector, provenance (the issuer of a person's
     # credential) and EDC (the counterparty's DID, ds's DidWebGuardExtension); a
@@ -224,7 +240,13 @@ authority:
       # container. Idempotent (upsert semantics), safe on every pod start.
       enabled: true
       # Empty → the image's baked-in defaults are used.
-      seedConfigMap: "" # agreements.yaml / owners.yaml / bootstrap.sh / texts
+      # The seed's content, key → file (agreements.yaml, owners.yaml, texts,
+      # bootstrap.sh), passed by the deployment (`readFile` in its values
+      # template). The chart renders the ConfigMap, mounts it, and rolls the
+      # anchor when it changes. Or name a ConfigMap you made in `seedConfigMap`;
+      # both set fails the render.
+      seedFiles: {}
+      seedConfigMap: ""
       seedMountPath: /seed
       # Optional key → path mapping for the seed ConfigMap (its volume's own
       # `items:`). A ConfigMap key cannot contain `/`, so an agreements file
@@ -233,8 +255,10 @@ authority:
       # Empty mounts every key flat, as before. Listing items mounts ONLY those.
       #   - {key: participation-en.md, path: content/participation-en.md}
       seedItems: []
-      # A deployment's own governance, as a ConfigMap. Its keys become flat
-      # filenames under the mount — a ConfigMap key cannot contain `/`.
+      # A deployment's own governance: its content, key → file
+      # (`<participant>.governance.yaml`), or a ConfigMap you made. Its keys become
+      # flat filenames under the mount — a ConfigMap key cannot contain `/`.
+      governanceFiles: {}
       governanceConfigMap: ""
       governanceMountPath: /governance
       # How `org apply` chooses what to onboard, and on what evidence. All
@@ -258,9 +282,22 @@ authority:
 # `grid-operator`, `third-party`) are in values.example.yaml, which only the
 # `example` environment reads. That file shows every key of an entry.
 #
+# Each entry is a profile (docs/deployment/configuration.md, "Participants"):
+# `name` and a boolean `enabled` always, `role` (provider | consumer | both) when
+# enabled, and the switches `portal`, `federatedCatalog`, `collector`,
+# `enrolment`, each a block with a boolean `enabled`. A disabled entry renders
+# nothing at all. Everything else is derived from the name.
+#
 # Public host per participant: <name>.<global.baseDomain>, serving exactly
 #   /.well-known/did.json, /.well-known/dspace-version
 #   /credentials/*, /sts/*, /users/*  → identity-registry (DCP surfaces)
 #   /protocol/2025-1/*      → EDC DSP
 # Everything else on that host returns 404.
 participants: []
+
+# Merged under every participants[] entry, the entry winning. Only the chart
+# blocks `connector`, `provenance` and `edc` may be set: an entry's `false` or
+# empty value does not override a default in a merge, so a default switch could
+# never be turned off. For what every participant shares, e.g.
+#   connector: {networkPolicy: {ingressFrom: [{namespace: host-platform}]}}
+participantDefaults: {}

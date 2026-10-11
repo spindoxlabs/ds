@@ -16,7 +16,7 @@ required or meaningful; per-chart defaults live in `helm/charts/<chart>/values.y
 | Key | Default | Notes |
 |---|---|---|
 | `global.baseDomain` | `ds.example.org` | **Change this.** Participant DIDs derive from it: `did:web:<participant>.<baseDomain>` |
-| `global.hosts.portal` | `portal` | → `portal.<baseDomain>`, the only human-facing host |
+| `global.hosts.portal` | `portal` | → `portal.<baseDomain>`, the human-facing host; the default of every participant's `portal.host` |
 | `global.hosts.trustAnchor` | `trust-anchor` | → the trust-anchor DID document and the revocation list |
 
 Changing `baseDomain` after participants are onboarded **changes their DIDs**. Treat it as
@@ -84,12 +84,20 @@ address it.
 | `global.postgres.host` | `ds-pg-rw.database.svc.cluster.local` |
 | `global.postgres.port` | `5432` — also the port opened by the default-deny egress rule |
 | `global.postgres.sslMode` | `require` |
-| `global.postgres.databases.identityRegistry` | `identity_registry` |
+| `global.postgres.databases.namePrefix` | `""` — prepended to **every** name below |
+| `global.postgres.databases.identityRegistry` | `identity_registry` (the anchor's) |
+| `global.postgres.databases.identityRegistryPrefix` | `identity_registry` → `identity_registry_<participant>` |
 | `global.postgres.databases.connectorPrefix` | `connector` → `connector_<participant>` |
 | `global.postgres.databases.provenancePrefix` | `provenance` → `provenance_<participant>` |
 | `global.postgres.databases.edcPrefix` | `edc` → `edc_<participant>` |
 
-One database **and one least-privilege owner role** per service. The password never lands in a
+A `-` in a participant name becomes `_`. On a Postgres cluster shared with a host platform,
+`namePrefix: ds_` puts every ds database and role under one prefix: `ds_identity_registry`,
+`ds_identity_registry_<p>`, `ds_connector_<p>`, `ds_provenance_<p>`, `ds_edc_<p>`. **Each
+password is `secrets.postgres.<database name>`**, so the keys carry the prefix too
+([Secrets](secrets.md)); a missing one fails the render, naming the key.
+
+One database **and one least-privilege owner role** per service, of the same name. The password never lands in a
 ConfigMap or a rendered URL: the user and password come from the Secret and Kubernetes
 interpolates them into the connection string.
 
@@ -138,10 +146,13 @@ Treat that as containment, not authentication.
 | `authority.identityRegistry.didWeb.internalHosts`, `.internalNetworks` | `[]`, `[]` | ADR-0029: the dataspace's own host suffixes and the private networks they may resolve to from inside the cluster; both or neither, forwarded to every identity registry and to every participant's connector, provenance and EDC (each as its own setting: `IDENTITY_REGISTRY_`/`CONNECTOR_`/`PROVENANCE_DID_WEB_INTERNAL_HOSTS`/`_NETWORKS`, the EDC's `ds.did.web.internal.hosts`/`.networks`). Empty: did:web documents are fetched from public addresses only. Setups in [exposure](exposure.md#when-the-cluster-resolves-the-dataspaces-own-hosts-privately) |
 | `authority.identityRegistry.credentialService.expose` | `false` | publish the DCP presentation-query endpoint; in the EDC flow the holder self-presents, so remote verifiers normally never call it |
 | `authority.identityRegistry.bootstrap.enabled` | `true` | run the bootstrap and seed import as an init container |
-| `authority.identityRegistry.bootstrap.seedConfigMap` | `""` | a ConfigMap with `agreements.yaml` / `owners.yaml`; empty → the image's baked-in defaults |
+| `authority.identityRegistry.networkPolicy.ingressFrom` | `[]` | `{namespace, podLabels}` entries admitted to the anchor's port besides the participant namespaces: the host platform's onboarding, which calls `/owners`, `/memberships` and `/admin` (on no Ingress). `namespace` is required |
+| `authority.identityRegistry.bootstrap.seedFiles` | `{}` | the seed's content, key → file (`agreements.yaml`, `owners.yaml`, texts, `bootstrap.sh`). The chart renders the ConfigMap `ds-identity-registry-seed`, mounts it, and rolls the anchor when the content changes (`checksum/seed`) |
+| `authority.identityRegistry.bootstrap.seedConfigMap` | `""` | or a ConfigMap you made, with the same keys; empty (and no `seedFiles`) → the image's baked-in defaults. Both set fails the render |
 | `authority.identityRegistry.bootstrap.seedMountPath` | `/seed` | |
 | `authority.identityRegistry.bootstrap.seedItems` | `[]` | `{key, path}` pairs: the seed volume's own `items:`. A ConfigMap key cannot contain `/`, so an `agreements.yaml` whose `text:` paths are nested (`content/<doc>-<locale>.md`) is mounted by mapping each key back to its path. Listing items mounts **only** those |
-| `authority.identityRegistry.bootstrap.governanceConfigMap` | `""` | a ConfigMap of governance files for `orgApply.governance`; its keys become flat filenames under the mount |
+| `authority.identityRegistry.bootstrap.governanceFiles` | `{}` | the governance files for `orgApply.governance`, key → content; rendered as `ds-identity-registry-governance`, `checksum/governance` on the pod |
+| `authority.identityRegistry.bootstrap.governanceConfigMap` | `""` | or a ConfigMap you made; its keys become flat filenames under the mount. Both set fails the render |
 | `authority.identityRegistry.bootstrap.governanceMountPath` | `/governance` | |
 | `authority.identityRegistry.bootstrap.orgApply.governance` | `[]` | governance files that choose which organisations to onboard; paths are relative to the mount unless absolute |
 | `authority.identityRegistry.bootstrap.orgApply.verifiedBy` | `""` | who verified this run's entries. **Required** by the two keys around it |
@@ -167,7 +178,11 @@ the default only because it is what this chart has always done.
 authority:
   identityRegistry:
     bootstrap:
-      governanceConfigMap: ds-governance
+      governanceFiles:
+        grid.yaml: |
+          {{- readFile "governance/grid.yaml" | nindent 10 }}
+        rec_it.yaml: |
+          {{- readFile "governance/rec_it.yaml" | nindent 10 }}
       orgApply:
         governance: [grid.yaml, rec_it.yaml]
         verifiedBy: example-dataspace-prod
@@ -203,15 +218,31 @@ Two failure modes are made loud rather than silent:
 
 ## `participants` — one release group each
 
-A list. Each entry produces up to **six** releases named `ds-<service>-<name>`, in namespace
-`<participantPrefix><name>`.
+A list of **profiles**. Each entry produces up to **six** releases named
+`ds-<service>-<name>`, in namespace `<participantPrefix><name>`. An entry is a name, an
+explicit `enabled`, a role, and feature switches; everything else is derived from the name.
 
 | Key | Default | Notes |
 |---|---|---|
-| `name` | — | **Required.** Also the participant's public host and DID: `did:web:<name>.<baseDomain>` |
-| `enabled` | — | false → the whole group is skipped |
-| `role` | — | `provider`, `consumer` or `both` (one connector process, both routers, one EDC); surfaces as a pod label and in service config |
+| `name` | — | **Required** on every entry. The organisation's alias (owner id), its public host and DID (`did:web:<name>.<baseDomain>`), its namespace, its organisation client (`svc-ds-connector-<name>`) |
+| `enabled` | — | **Required, a boolean.** `false` → **nothing** renders for the entry: no namespace, release, connector URL, database, secret check; its other keys are not even validated, so a declared-but-off participant needs no role and no secrets |
+| `role` | — | **Required when enabled**: `provider`, `consumer` or `both` (one connector process, both routers, one EDC); anything else fails the render |
 | `did` | `""` | empty → derived. Override only to pin an existing DID |
+| `portal.enabled` | `false` | a portal (and its `ds-oauth2-proxy`) for this participant |
+| `portal.host` | `""` → `<hosts.portal>.<baseDomain>` | the portal's host. **Two enabled portals on one host fail the render**: every participant may have a portal, each on its own host. The Ingress, the oauth2-proxy's `/oauth2` path, `ORIGIN` and this participant's connector notification link follow it; register `https://<host>/oauth2/callback` on the realm's oauth2-proxy client |
+| `federatedCatalog.enabled` | `false` | see below |
+| `collector.enabled` | `false` | this participant collects its members' consent (ADR-0026) for `collector.holders` |
+| `collector.holders` | `[]` | **required when the collector is on**: enabled participants whose connector holds that consent. The anchor adds each pair `holder ← this` once both are active participants ([Operations](operations.md#collector-pairs)); an unknown or disabled holder fails the render |
+| `enrolment.enabled` | `false` | enrol through the charts, for a participant hosted with the anchor ([Operations](operations.md#enrolment)). Needs `participants.<name>.enrolmentCode` in the secrets file |
+| `enrolment.roles`, `.scopes` | `[]` | the code's roles and scopes; empty → from `role` (`both` → `provider,consumer`), and `dataspaces.query` plus `owner:<name>:member` for a consumer |
+
+Every switch's `enabled` must be a boolean: a string fails the render.
+
+**`participantDefaults`** (top level) is merged under every entry, the entry winning. It may
+carry only the chart blocks `connector`, `provenance` and `edc`, for what every participant
+shares (the host platform's callers in `connector.networkPolicy.ingressFrom`, replica counts).
+A switch or identity key there fails the render: in a merge, an entry's `false` or empty value
+does not override a default's, so a default switch could never be turned off.
 
 The dataset API takes no key here. It is participant-operated and external, and
 the charts have nothing to tell it: it calls the connector at
@@ -241,10 +272,11 @@ naming the new key. The ones a deployment sets:
 | `connector.clientId` | `svc-ds-connector-<name>` | the organisation client this connector — and its sync Job — authenticates as. Set it when the participant's name differs from the organisation's alias in the realm. Its secret is `participants.<name>.organisationClientSecret` in the secrets file, and must equal what the realm holds ([Secrets](secrets.md)) |
 | `connector.notify.backends` | `""` | only `smtp` and `webhook` are real backend names; empty for no notifications |
 | `connector.notify.webhookAllowedHosts` | `[]` | SSRF guard. **An empty list rejects every webhook URL** — required if `backends` includes `webhook` |
-| `connector.governance.configMap` | `""` | the governance files, from a ConfigMap the deployment builds. Empty → no governance, empty catalogue |
+| `connector.governance.files` | `{}` | the governance's content, key → file (`governance.yaml`, `governance.<overlayName>.yaml`, `odrl-profile.yaml`, `sharing-offers.yaml`, …), from the deployment's values (`readFile`). The chart renders `ds-connector-<name>-governance`, mounts it, and derives `checksum/governance` from the content, so a governance change is a rollout and the sync hook re-runs |
+| `connector.governance.configMap` | `""` | or a ConfigMap the deployment builds. Neither → no governance, empty catalogue. Both `files` and `configMap` fail the render |
 | `connector.governance.overlayName` | `""` | merges `governance.<name>.yaml` on top of the base file |
 | `connector.governance.odrlProfileFile` | `""` | the deployment's own ODRL profile, a key of that ConfigMap → `CONNECTOR_ODRL_PROFILE_PATH`. Unset, ds's bundled profile is used and **every offer naming a deployment-added purpose stops publishing** |
-| `connector.governance.checksum` | `""` | a digest of what the deployment assembled. Rendered as the pod annotation `checksum/governance`, so a governance change is a rollout and the sync hook re-runs; without it a rebuilt ConfigMap with unchanged values changes nothing |
+| `connector.governance.checksum` | `""` | with `configMap` only: a digest of what the deployment assembled, rendered as `checksum/governance`; without it a rebuilt ConfigMap with unchanged values changes nothing. With `files` it is computed, and setting it fails the render |
 | `connector.networkPolicy.ingressFrom` | `[]` | `{namespace, podLabels}` entries admitted to the connector's port — the host platform's consent writer and data plane. `namespace` is required; with `podLabels`, only those pods. See [Exposure](exposure.md) |
 | `connector.sync.clientId` | `""` | publish as a separate client (`svc-ds-publisher`); its secret is `participants.<name>.publisherSecret` |
 | `connector.personTokenRequired`, `connector.trustAnchor.*`, `connector.podAnnotations` | | as in the chart; see below |
@@ -252,7 +284,6 @@ naming the new key. The ones a deployment sets:
 | `edc.replicaCount` | `1` | `edc.managementAudience`, `edc.edrPublicBaseUrl` likewise |
 | `federatedCatalog.enabled` | per participant | **Crawling is a consumer-role operation** — a provider-role connector does not mount the route the crawler calls. Enable it where a participant of role `consumer` or `both` exists (the crawl uses the first such connector), or set `connectorServiceName` explicitly |
 | `federatedCatalog.crawlInterval` | `300` | seconds |
-| `portal.enabled` | per participant | the portal is deployed alongside exactly one participant, and brings `ds-oauth2-proxy` with it |
 | `portal.replicaCount` | `1` | |
 | `portal.datasetApi.url` | `""` | the catalogue page's source when the participant runs no federated catalogue (`CATALOGUE_URL`) |
 | `portal.consumer.*` | `""` | `defaultAssigner`, `defaultCounterPartyAddress`: the provider the portal's consumer flow defaults to |

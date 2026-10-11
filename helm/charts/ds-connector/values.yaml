@@ -129,6 +129,12 @@ governance:
   # returns nothing, so a provider deployed without this publishes no assets
   # and nothing reports it. A provider-role participant needs this set.
   configMap: ""
+  # ds3: the governance's content instead, key → file (governance.yaml,
+  # governance.<overlayName>.yaml, odrl-profile.yaml, sharing-offers.yaml, …),
+  # passed by the deployment. The chart renders `<release>-governance` from it,
+  # mounts it, and derives `checksum/governance` from the content. Exclusive
+  # with `configMap` and `checksum` (either with it fails the render).
+  files: {}
   mountPath: /governance
   # The deployment's own ODRL profile, a key of `configMap`. "" → ds's bundled
   # profile, under which every offer naming a deployment-added purpose stops

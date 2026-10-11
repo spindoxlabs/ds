@@ -1,7 +1,7 @@
 # The bundled Keycloak of a local cluster, in development mode, with ds's dev realm
 # `dataspaces` imported (services/keycloak/realm-dataspaces-dev.json: its users'
 # passwords are their usernames, which is why it exists only for local clusters). The
-# ds clients are then synced into it by minikube.sh realm with generated secrets. Served
+# ds clients are then synced into it by standalone.sh realm with generated secrets. Served
 # at https://keycloak.${DOMAIN} through the ingress, so tokens carry that issuer.
 apiVersion: apps/v1
 kind: Deployment

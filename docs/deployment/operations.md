@@ -73,8 +73,8 @@ and no probe reports it. A deployment ran that way for a fortnight because this
 page did not say who makes the call and the charts had no job that made it.
 
 The `ds-connector` chart carries one now — a `post-install`/`post-upgrade` hook
-Job, rendered only for a **provider-role** participant that has
-`governance.configMap` set. It fails the release when the sync reports errors or
+Job, rendered only for a **provider-role** participant that has governance
+(`governance.files` or `governance.configMap`). It fails the release when the sync reports errors or
 publishes nothing, and it reads the body rather than the status code.
 
 Two identities may make the call, and the choice is a real one:
@@ -152,11 +152,16 @@ diff when you rotate anything.
 
 ### A governance change is a checksum change
 
-The governance ConfigMap is the deployment's, built outside these charts. Rebuilding it with
-unchanged chart values changes nothing helmfile can see: no rollout, and the connector's
-post-upgrade sync does not run, so the catalogue keeps offering the old governance. Pass a
-digest of what you assembled as `connector.governance.checksum`; it is the pod annotation
-`checksum/governance`, so the change is a rollout and the sync hook publishes it.
+Pass the governance as content, `connector.governance.files` (and the anchor's seed and
+governance as `bootstrap.seedFiles` / `governanceFiles`), read by the deployment's values
+template (`readFile`). The charts render the ConfigMaps and digest the content into the pod
+annotations (`checksum/governance`, `checksum/seed`), so a changed file is a rollout and the
+connector's post-upgrade sync publishes it, with nothing to keep in step by hand.
+
+With a ConfigMap the deployment builds itself (`connector.governance.configMap`), rebuilding it
+with unchanged chart values changes nothing helmfile can see: no rollout, and the sync does not
+run, so the catalogue keeps offering the old governance. Then pass a digest of what you
+assembled as `connector.governance.checksum`.
 
 ### The data plane first, then the connector
 
@@ -255,13 +260,16 @@ lift the withdrawals among them.
 Values-only, in the deployment repository, provided DNS already has a wildcard record:
 
 1. **CNPG** — four databases and owner roles: `identity_registry_<name>`, `connector_<name>`,
-   `provenance_<name>`, `edc_<name>` (`-` in the name becomes `_`).
-2. **The secrets file** — four Postgres passwords plus a `participants.<name>` block: every key
+   `provenance_<name>`, `edc_<name>` (`-` in the name becomes `_`; each prefixed with
+   `global.postgres.databases.namePrefix` when set).
+2. **The secrets file** — four Postgres passwords, keyed by those database names, plus a
+   `participants.<name>` block: every key
    `helm/secrets.example.yaml` shows for one participant, including the EDR key pair
    (`edcVault.edrSigningPrivateJwk` and its public half `edrSigningPublicJwk`, from
    `task secrets:keygen`). `connectorClientSecret` is the same `svc-edc` secret every
    participant has; every other key is this participant's own.
-3. **The values file** — append an entry to `participants`.
+3. **The values file** — append a profile to `participants`: `name`, `enabled: true`, `role`,
+   and the switches it needs ([Configuration](configuration.md#participants-one-release-group-each)).
 4. **DNS/TLS** — `<name>.<baseDomain>` must resolve to the ingress controller. A wildcard record
    and wildcard certificate make this a no-op.
 
@@ -272,11 +280,33 @@ helmfile -e staging apply
 
 The new participant's namespace, labels, releases and DID all derive from the entry.
 
-### Enrolment — an operator step
+### Enrolment
 
 The participant registry generates its own key and publishes its DID document at every start,
-but **does not enrol itself**: enrolment spends a single-use code, and a code in a Deployment
-would be replayed at every restart. So it is two commands, run once by an operator:
+but its pod **does not enrol itself**: enrolment spends a single-use code, and the anchor
+verifies it against the DID document the participant serves, which an init container would
+present before it exists. Two ways:
+
+**Through the charts, for a participant hosted with the anchor** (`enrolment.enabled: true`
+on its profile, off by default):
+
+1. The deployment generates one code per such participant into its secrets file,
+   `participants.<name>.enrolmentCode` (at least 32 characters, never shared;
+   `helm/tools/generate_secrets.py` makes one). The render fails if it is missing.
+2. The anchor's post-install/post-upgrade hook (`ds-identity-registry-enrolment`) registers each
+   code for its owner: `ir-cli org enrolment-token --code-env …`, idempotent, and a no-op once
+   the owner has enrolled. Roles and scopes follow the participant's role.
+3. The participant release runs a Job, `ds-identity-registry-<name>-enrol-<digest>`, that spends
+   the code once, unless enrolled (`participant status --quiet || participant init --code …`),
+   retrying until the participant's host serves its DID document and the anchor has registered
+   the code, for up to `enrolment.activeDeadlineSeconds` (30 minutes).
+
+No `kubectl exec`, and nothing to repeat: a second apply changes nothing. The code never leaves
+the two Secrets it is rendered into; spent, it enrols nothing. To re-enrol (a new key), use the
+manual path with `--force`.
+
+**By hand**, for a participant hosted elsewhere or with the switch off, two commands run once
+by an operator:
 
 ```bash
 # 1. at the anchor: mint a code for the organisation's owner alias
@@ -290,9 +320,22 @@ kubectl -n <participant namespace> exec deploy/ds-identity-registry-<name> -- \
 The anchor verifies the enrolment by fetching the participant's DID document over did:web, so
 the participant host must already serve it (`helm test ds-edc-<name>`).
 
+### Collector pairs
+
+A participant whose profile has `collector.enabled` collects its members' consent for each
+participant in `collector.holders` (ADR-0026). The anchor's release runs a Job,
+`ds-identity-registry-collectors-<digest>`, that waits until both of a pair are active
+participants (after their enrolment), then runs `ir-cli collector add`. It is idempotent, and
+**a revoked pair stays revoked**: the command leaves it as it is and says who revoked it, when
+and why. Lift a revocation with `ir-cli collector reinstate --holder-did … --collector-did …
+--reason …` in the anchor's pod. Removing a holder from the list is not a revocation. A
+deployment's seed `bootstrap.sh` no longer needs the collector lines, nor the anchor restart
+they waited for.
+
 ## Removing a participant
 
-Set `enabled: false` on the entry and apply. Helmfile deletes the releases; **the namespace, its
+Set `enabled: false` on the entry and apply (it then renders nothing, and needs neither a role
+nor secrets). Helmfile deletes the releases; **the namespace, its
 databases and the registry entry survive deliberately** — provenance records and contract
 history outlive a participant's workloads. Clean those up by hand once you are sure.
 

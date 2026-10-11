@@ -4,7 +4,7 @@
 # dataset-api`), which is what the connectors' `networkPolicy.ingressFrom` admits. It
 # asks the provider's connector for decisions (/internal/dataplane/authorize) and for the
 # EDR verification key (/internal/edr-jwks), as `svc-ds-dataset-api`, under
-# DS_ENV=production. Filled in and applied by `helm/minikube/minikube.sh data-plane`.
+# DS_ENV=production. Filled in and applied by `helm/minikube/standalone.sh data-plane`.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -279,8 +279,10 @@ Public addressing — every public host is a subdomain of global.baseDomain
 {{- end -}}
 
 {{/*
-Participant-scoped database names — <prefix>_<participant>, matching the roles
-provisioned in docs/cnpg-cluster.example.yaml. One helper per service so the
+Participant-scoped database names — <namePrefix><prefix>_<participant>, matching
+the roles provisioned in docs/cnpg-cluster.example.yaml. `namePrefix` (default
+empty) lets a deployment put every ds database under one prefix on a shared
+cluster (e.g. `ds_`). One helper per service so the
 naming lives in exactly one place.
 
 **Hyphens become underscores.** A participant name is a hostname and a
@@ -290,15 +292,15 @@ identifier is not. Deriving the database name without this produced
 the participant name looking correct in every manifest.
 */}}
 {{- define "ds.db.connector" -}}
-{{- printf "%s_%s" ((((.Values.global).postgres).databases).connectorPrefix | default "connector") (replace "-" "_" .Values.participant.name) -}}
+{{- printf "%s%s_%s" ((((.Values.global).postgres).databases).namePrefix | default "") ((((.Values.global).postgres).databases).connectorPrefix | default "connector") (replace "-" "_" .Values.participant.name) -}}
 {{- end -}}
 
 {{- define "ds.db.provenance" -}}
-{{- printf "%s_%s" ((((.Values.global).postgres).databases).provenancePrefix | default "provenance") (replace "-" "_" .Values.participant.name) -}}
+{{- printf "%s%s_%s" ((((.Values.global).postgres).databases).namePrefix | default "") ((((.Values.global).postgres).databases).provenancePrefix | default "provenance") (replace "-" "_" .Values.participant.name) -}}
 {{- end -}}
 
 {{- define "ds.db.edc" -}}
-{{- printf "%s_%s" ((((.Values.global).postgres).databases).edcPrefix | default "edc") (replace "-" "_" .Values.participant.name) -}}
+{{- printf "%s%s_%s" ((((.Values.global).postgres).databases).namePrefix | default "") ((((.Values.global).postgres).databases).edcPrefix | default "edc") (replace "-" "_" .Values.participant.name) -}}
 {{- end -}}
 
 {{/*

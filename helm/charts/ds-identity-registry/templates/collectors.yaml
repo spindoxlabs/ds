@@ -1,0 +1,67 @@
+{{- /*
+ds1: the collector pairs (ADR-0026). For each participant with the collector switch
+on, the holder accepts it as the collector of the consent its connector holds:
+`ir-cli collector add`, idempotent, and a revoked pair stays revoked (the command
+leaves it as it is and says who revoked it).
+
+`collector add` refuses a DID that is not an active participant, and participants
+become active when they enrol, after this release. So this is a Job, not a hook and
+not the bootstrap: it waits until both of a pair are active, bounded by
+`enrolment.activeDeadlineSeconds`, then adds the pair. Its name carries a digest of
+the pairs, so an upgrade with the same pairs leaves the finished Job alone, and a
+changed list runs again. It replaces the collector lines of a deployment's seed
+`bootstrap.sh` (and the anchor restart they needed after the enrolment).
+*/}}
+{{- if include "ir.anchorPairs" . }}
+{{- $digest := printf "%s|%s" (include "ds.image" .) (toJson .Values.collectors) | sha256sum | trunc 8 }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-collectors-%s" (include "ds.fullname" .) $digest }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.enrolment.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.enrolment.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "ir.jobPodLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- include "ds.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ds.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ds.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: collectors
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          workingDir: /app
+          command: ["/bin/sh", "-uc"]
+          args:
+            - |
+              active() { ir-cli participant list | grep -F "  $1 " | grep -q "status=active"; }
+              pair() {
+                until active "$1" && active "$2"; do
+                  echo "collector $2 for holder $1: waiting until both are active participants (enrolment); retrying in {{ .Values.enrolment.retrySeconds }}s"
+                  sleep {{ .Values.enrolment.retrySeconds }}
+                done
+                ir-cli collector add --holder-did "$1" --collector-did "$2" || exit 1
+              }
+              {{- range .Values.collectors }}
+              pair {{ required "collectors[].holderDid is required" .holderDid | quote }} {{ required "collectors[].collectorDid is required" .collectorDid | quote }}
+              {{- end }}
+              ir-cli collector list
+          env:
+            {{- include "ir.env" . | nindent 12 }}
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+          resources:
+            {{- toYaml (.Values.resources | default ((.Values.global).resources)) | nindent 12 }}
+      volumes:
+        {{- include "ds.tmpVolume" . | nindent 8 }}
+{{- end }}

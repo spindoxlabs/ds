@@ -1,5 +1,5 @@
 # The ds clients into the bundled realm, with the generated secrets (Secret
-# `keycloak-sync-env`, written by minikube.sh realm): every file that declares the
+# `keycloak-sync-env`, written by standalone.sh realm): every file that declares the
 # realm, as ds's compose stack syncs it (clients.dataspaces.yaml as the base, clients.yaml
 # and the energy overlay), plus this environment's organisation and collector clients.
 # ENV=dev only because the base files' other clients keep their dev secrets; every client

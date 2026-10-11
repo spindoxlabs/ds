@@ -136,8 +136,10 @@ whole deployment, and one fewer registration to negotiate.
 So the realm needs **one browser-login client**, named as `oauth2_proxy_client:` in
 `clients.yaml`:
 
-- redirect URI `https://portal.<baseDomain>/oauth2/callback`;
-- **post-logout redirect URI `https://portal.<baseDomain>/oauth2/sign_out`** — see below;
+- redirect URI `https://portal.<baseDomain>/oauth2/callback` (one per portal host: a
+  participant's `portal.host` adds `https://<host>/oauth2/callback`);
+- **post-logout redirect URI `https://portal.<baseDomain>/oauth2/sign_out`** (likewise per
+  portal host) — see below;
 - it must request the scope `organization:*`, or Keycloak emits no `organization.<alias>.groups`
   and every participant-scoped seat silently grants nothing;
 - naming it in `clients.yaml` is what makes the syncer attach an audience mapper per service

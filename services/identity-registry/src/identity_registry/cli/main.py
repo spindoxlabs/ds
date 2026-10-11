@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -2253,6 +2254,16 @@ def org_enrolment_token(
         "consumer", help="Roles this token admits: provider,consumer"
     ),
     scope: list[str] = typer.Option([], help="Allowed scopes (repeatable)"),
+    code_env: str = typer.Option(
+        None,
+        "--code-env",
+        help=(
+            "Register the code held in this environment variable instead of "
+            "generating one (the charts' co-hosted enrolment). Idempotent; "
+            "nothing is registered once the owner has enrolled. The code is "
+            "never printed."
+        ),
+    ),
 ):
     """Issue the code a verified organisation enrols its own key with.
 
@@ -2263,8 +2274,52 @@ def org_enrolment_token(
 
     **Printed once** — only the hash is stored. Reissue to replace a lost code,
     which also invalidates the old one.
+
+    With ``--code-env`` the code is the deployment's (a co-hosted participant,
+    docs/deployment/operations.md "Enrolment"): it is read from the environment,
+    never from argv, and registered at most once per owner.
     """
     from ..services import enrolment as enrol_service
+
+    if code_env is not None:
+        supplied = os.environ.get(code_env, "").strip()
+        if not supplied:
+            typer.echo(
+                f"--code-env {code_env}: the variable is unset or empty", err=True
+            )
+            raise typer.Exit(2)
+
+        async def _register():
+            factory = await _ensure_db()
+            async with factory() as session:
+                try:
+                    done = await enrol_service.register_enrolment_code(
+                        session,
+                        alias,
+                        supplied,
+                        ttl_days=ttl_days,
+                        label=label,
+                        created_by="ir-cli",
+                        roles=[r.strip() for r in roles.split(",") if r.strip()],
+                        allowed_scopes=list(scope),
+                    )
+                except enrol_service.EnrolmentError as exc:
+                    typer.echo(exc.message, err=True)
+                    raise typer.Exit(1) from exc
+                await session.commit()
+            expiry = done.expires_at.isoformat() if done.expires_at else "never"
+            if done.outcome == "already-enrolled":
+                typer.echo(f"{alias} has already enrolled; no code registered")
+                return
+            state = {
+                "registered": "registered",
+                "rearmed": "had expired unspent, re-armed",
+                "already-registered": "already registered",
+            }[done.outcome]
+            typer.echo(f"Enrolment code for {alias}: {state} (expires {expiry})")
+
+        _run(_register())
+        return
 
     async def _issue():
         factory = await _ensure_db()

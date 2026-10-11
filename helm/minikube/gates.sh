@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# The gates of a local cluster (helm/minikube/minikube.sh), each proven to fail when its
-# surface is broken: `helm test`, the anchor's bootstrap (owners and collectors), the
+# The gates of a local cluster (helm/minikube/), each proven to fail when its
+# surface is broken: `helm test`, the anchor's bootstrap (owners) and collector Job, the
 # `helm test` negatives, the install checks (pods, sync Jobs, the EDR key, a transfer
 # through the data-plane stand-in, a governance change), the secret policy's refusals,
 # every guard on the cluster, a key rotation, and the did:web internal allowance
 # (ADR-0029). Every red case is put back before the next gate starts.
 #
-#   helm/minikube/minikube.sh gates [gate...]     (configuration: minikube.sh's DS_MK_*)
+#   helm/minikube/standalone.sh gates [gate...]   (configuration: env.sh's DS_MK_*)
+#   helm/minikube/gates.sh [gate...]              (the same)
 #
 # gates: helm-test t2.3 t2.4 t4.1 t5.1 t5.2 t5.3 consumer-list t5.5 allowance
 #        allowance-services render-negatives pod-negatives rotation; all (every gate, in
@@ -19,10 +20,10 @@
 # refusal from the new pod, then `helm rollback`. Nothing secret is printed.
 set -uo pipefail
 
-HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=env.sh
+. "$(cd "$(dirname "$0")" && pwd)/env.sh"
+HERE=$MK_HERE
 CHARTS=$(cd "$HERE/../charts" && pwd)
-DS_SRC=$(cd "$HERE/../.." && pwd)
-: "${DS_MK_PROFILE:?run through minikube.sh gates}"
 SECRETS=$DS_MK_SECRETS
 B=$DS_MK_BINDING
 CON=$DS_MK_CONSUMER PRO=$DS_MK_PROVIDER DOMAIN=$DS_MK_DOMAIN
@@ -31,8 +32,7 @@ DPNS=$DS_MK_DATA_PLANE_NS
 CON_DB=connector_${CON//-/_}
 FAILS=0
 
-"$HERE/minikube.sh" guard >/dev/null || exit 9
-hf() { (cd "$DS_MK_HELMFILE_DIR" && DS_MK_NODE_IP=$(minikube -p "$DS_MK_PROFILE" ip) helmfile -e "$DS_MK_HELMFILE_ENV" "$@"); }
+(guard >/dev/null) || exit 9
 
 pass() { echo "PASS $1: $2"; }
 fail() { echo "FAIL $1: $2"; FAILS=$((FAILS + 1)); }
@@ -137,26 +137,28 @@ gate_t2_3() {
 }
 
 gate_t2_4() {
-  # The collector pair bootstrap.sh adds, and a revocation that survives it: revoke,
-  # restart the anchor (its bootstrap runs `collector add` again), still revoked; then
-  # the explicit reinstatement puts it back in force.
-  local out pod
+  # The collector pair the anchor's collector Job adds (the values' `collector` switch),
+  # and a revocation that survives it: revoke, run the Job again (it runs `collector add`
+  # once more), still revoked; then the explicit reinstatement puts it back in force.
+  local out job logs
   local pair="--holder-did did:web:$PRO.$DOMAIN --collector-did did:web:$CON.$DOMAIN"
   out=$(kubectl exec -n "$AUTH" deploy/ds-identity-registry -c identity-registry -- ir-cli collector list 2>&1)
   grep -q "did:web:$CON.$DOMAIN → did:web:$PRO.$DOMAIN  active" <<<"$out" \
-    && pass t2.4 "collector pair from bootstrap.sh active" || fail t2.4 "$out"
+    && pass t2.4 "collector pair from the collector Job active" || fail t2.4 "$out"
   # shellcheck disable=SC2086
   kubectl exec -n "$AUTH" deploy/ds-identity-registry -c identity-registry -- ir-cli collector revoke \
     $pair --reason "gate T2.4: the agreement ended" --by gate-t2.4 >/dev/null
-  kubectl rollout restart -n "$AUTH" deploy/ds-identity-registry >/dev/null
-  kubectl rollout status -n "$AUTH" deploy/ds-identity-registry --timeout=300s >/dev/null
-  pod=$(newest_pod "$AUTH" ds-identity-registry)
-  out=$(kubectl exec -n "$AUTH" "$pod" -c identity-registry -- ir-cli collector list 2>&1)
+  job=$(kubectl get jobs -n "$AUTH" -o name | grep -- '-collectors-' | head -1)
+  kubectl get "$job" -n "$AUTH" -o json \
+    | jq 'del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.managedFields, .status, .spec.selector, .spec.template.metadata.labels["controller-uid"], .spec.template.metadata.labels["batch.kubernetes.io/controller-uid"], .spec.template.metadata.labels["batch.kubernetes.io/job-name"], .spec.template.metadata.labels["job-name"])' \
+    | kubectl replace --force -f - >/dev/null
+  kubectl wait --for=condition=Complete "$job" -n "$AUTH" --timeout=300s >/dev/null
+  logs=$(kubectl logs -n "$AUTH" "$job" 2>&1)
+  out=$(kubectl exec -n "$AUTH" deploy/ds-identity-registry -c identity-registry -- ir-cli collector list 2>&1)
   if grep -q "did:web:$CON.$DOMAIN → did:web:$PRO.$DOMAIN  revoked" <<<"$out" \
-    && has "Consent collector revoked, left unchanged: .*revoked by gate-t2.4 at .*the agreement ended" \
-      kubectl logs -n "$AUTH" "$pod" -c bootstrap; then
-    pass "t2.4 revoked survives restart" "after the anchor restart the pair is still revoked; bootstrap: $(kubectl logs -n "$AUTH" "$pod" -c bootstrap | grep -o 'Consent collector revoked, left unchanged.*' | cut -c1-200)"
-  else fail "t2.4 revoked survives restart" "$(echo $out)"; fi
+    && grep -qE "Consent collector revoked, left unchanged: .*revoked by gate-t2.4 at .*the agreement ended" <<<"$logs"; then
+    pass "t2.4 revoked survives a re-run" "after the collector Job ran again the pair is still revoked; Job: $(grep -o 'Consent collector revoked, left unchanged.*' <<<"$logs" | cut -c1-200)"
+  else fail "t2.4 revoked survives a re-run" "$(echo $out)"; fi
   # shellcheck disable=SC2086
   out=$(kubectl exec -n "$AUTH" deploy/ds-identity-registry -c identity-registry -- ir-cli collector reinstate \
     $pair --reason "gate T2.4: renewed" --by gate-t2.4 2>&1)
@@ -183,12 +185,15 @@ gate_t4_1() {
   out=$(helm_test "$NCON" ds-portal-$CON)
   grep -q "Phase: *Failed" <<<"$out" && pass "t4.1 b (/join walled)" "$(grep -o '/join answered.*' <<<"$out" | cut -c1-120)" || fail "t4.1 b" "$out"
   kubectl create -f /tmp/.ds-mk-portal-public.json >/dev/null; rm -f /tmp/.ds-mk-portal-public.json; sleep 5
-  # c: the catalogue lacks an asset the governance exposes (ConfigMap changed, no sync).
+  # c: the catalogue lacks an asset the governance exposes (the chart's ConfigMap edited
+  # out of band, no sync), then the ConfigMap put back as it was.
+  local gcm=ds-connector-$PRO-governance saved
+  saved=$(kubectl get configmap "$gcm" -n "$NPRO" -o json | jq 'del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.managedFields)')
   t45_governance_extra > /tmp/.ds-mk-gov.yaml
-  kubectl create configmap $PRO-governance -n "$NPRO" --from-file=governance.yaml=/tmp/.ds-mk-gov.yaml --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  jq --rawfile g /tmp/.ds-mk-gov.yaml '.data["governance.yaml"] = $g' <<<"$saved" | kubectl apply -f - >/dev/null
   out=$(helm_test "$NPRO" ds-connector-$PRO)
   grep -q "Phase: *Failed" <<<"$out" && pass "t4.1 c (catalogue ≠ governance)" "$(grep -o 'catalogue: .*' <<<"$out" | head -1)" || fail "t4.1 c" "$out"
-  "$HERE/minikube.sh" configmaps >/dev/null; rm -f /tmp/.ds-mk-gov.yaml
+  kubectl replace -f - <<<"$saved" >/dev/null; rm -f /tmp/.ds-mk-gov.yaml
   # d: the participant registry scaled to zero.
   kubectl scale deploy ds-identity-registry-$PRO -n "$NPRO" --replicas=0 >/dev/null
   kubectl wait --for=delete pod -l app.kubernetes.io/instance=ds-identity-registry-$PRO -n "$NPRO" --timeout=120s >/dev/null 2>&1
@@ -236,10 +241,10 @@ gate_t5_1() {
   # condition is not True.
   notready=$(for ns in $AUTH $NCON $NPRO; do kubectl get pods -n "$ns" -o json | jq -r '.items[]
     | select(.metadata.deletionTimestamp == null)
-    | select(.metadata.name | test("-test-|-sync-") | not)
+    | select(.metadata.name | test("-test-|-sync-|-enrol|-collectors-") | not)
     | select([.status.conditions[]? | select(.type == "Ready" and .status == "True")] | length == 0)
     | .metadata.name'; done)
-  [ -z "$notready" ] && pass t5.1 "every pod Ready ($(for ns in $AUTH $NCON $NPRO; do kubectl get pods -n $ns --no-headers | grep -vc -- -test-; done | paste -sd+ | bc) pods)" || fail t5.1 "not ready: $notready"
+  [ -z "$notready" ] && pass t5.1 "every pod Ready ($(for ns in $AUTH $NCON $NPRO; do kubectl get pods -n $ns --no-headers | grep -vcE -- '-test-|-sync-|-enrol|-collectors-'; done | paste -sd+ | bc) pods)" || fail t5.1 "not ready: $notready"
   for ns in $NCON $NPRO; do
     p=${ns#$DS_MK_PREFIX}
     # The publishing hook fails its release on errors or an empty publish, so a Completed
@@ -283,15 +288,17 @@ gate_t5_5() {
   local g="$B/governance/$PRO/governance.yaml" orig pod0 pod1 out sum0 sum1
   orig=$(mktemp); cp "$g" "$orig"
   pod0=$(newest_pod "$NPRO" ds-connector-$PRO)
-  # red: the ConfigMap changes, the checksum does not: nothing rolls, no sync.
+  # red: the chart's ConfigMap edited out of band, the values unchanged: nothing rolls,
+  # no sync (the checksum follows the governance file the values read, not the cluster).
   t45_governance_extra > /tmp/.ds-mk-gov.yaml
-  kubectl create configmap $PRO-governance -n "$NPRO" --from-file=governance.yaml=/tmp/.ds-mk-gov.yaml --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl get configmap ds-connector-$PRO-governance -n "$NPRO" -o json \
+    | jq --rawfile g /tmp/.ds-mk-gov.yaml 'del(.metadata.resourceVersion, .metadata.managedFields) | .data["governance.yaml"] = $g' \
+    | kubectl apply -f - >/dev/null
   (hf -l name=ds-connector-$PRO apply --skip-deps --suppress-diff >/dev/null 2>&1)
   [ "$(newest_pod "$NPRO" ds-connector-$PRO)" = "$pod0" ] && pass "t5.5 red" "ConfigMap changed without the checksum: same pod ${pod0#pod/}, no upgrade" || fail "t5.5 red" "the connector rolled"
   # green: the governance file changes (the checksum follows it).
   cp /tmp/.ds-mk-gov.yaml "$g"; rm -f /tmp/.ds-mk-gov.yaml
   sum0=$(kubectl get deploy ds-connector-$PRO -n "$NPRO" -o jsonpath='{.spec.template.metadata.annotations.checksum/governance}')
-  "$HERE/minikube.sh" configmaps >/dev/null
   (hf -l name=ds-connector-$PRO apply --skip-deps --suppress-diff >/dev/null 2>&1)
   pod1=$(newest_pod "$NPRO" ds-connector-$PRO)
   sum1=$(kubectl get deploy ds-connector-$PRO -n "$NPRO" -o jsonpath='{.spec.template.metadata.annotations.checksum/governance}')
@@ -300,7 +307,6 @@ gate_t5_5() {
     pass t5.5 "checksum ${sum0:0:8}→${sum1:0:8}, connector rolled, sync re-ran, catalogue 2 = governance 2"
   else fail t5.5 "pod ${pod1#pod/} sum ${sum1:0:8} test: $(grep -o 'catalogue: .*' <<<"$out")"; fi
   cp "$orig" "$g"; rm -f "$orig"
-  "$HERE/minikube.sh" configmaps >/dev/null
   (hf -l name=ds-connector-$PRO apply --skip-deps --suppress-diff >/dev/null 2>&1)
   has "Withdrew dataset datasets.gold.om_weather_features" kubectl logs -n "$NPRO" deploy/ds-connector-$PRO -c connector \
     && has "catalogue: 1 asset\(s\); governance exposes 1" helm_test "$NPRO" ds-connector-$PRO \

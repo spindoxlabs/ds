@@ -1837,11 +1837,18 @@ tasks:
         pytest helm/tests -q -p no:cacheprovider
 
   helm:minikube:*:
-    desc: "The charts on a local minikube under DS_ENV=production: task helm:minikube:<step> [-- args]; steps in helm/minikube/minikube.sh, procedure in docs/deployment/local-cluster.md. Needs KUBECONFIG set to a kubeconfig of its own"
+    desc: "The local minikube cluster for the charts (cluster, CA, CoreDNS, images): task helm:minikube:<step> [-- args]; steps in helm/minikube/minikube.sh, procedure in docs/deployment/local-cluster.md"
     vars:
       STEP: "{{index .MATCH 0}}"
     cmds:
       - helm/minikube/minikube.sh {{.STEP}} {{.CLI_ARGS}}
+
+  helm:standalone:*:
+    desc: "ds on that cluster without a host platform, under DS_ENV=production (stand-in platform, secrets, releases, tests, gates): task helm:standalone:<step> [-- args]; steps in helm/minikube/standalone.sh"
+    vars:
+      STEP: "{{index .MATCH 0}}"
+    cmds:
+      - helm/minikube/standalone.sh {{.STEP}} {{.CLI_ARGS}}
 
   # ── Documentation ────────────────────────────────────────────────────────
   docs:serve:

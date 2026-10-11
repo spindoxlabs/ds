@@ -15,7 +15,7 @@ spec:
         {{- include "ds.labels" . | nindent 8 }}
       annotations:
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-        {{- with .Values.governance.checksum }}
+        {{- with include "conn.governanceChecksum" . }}
         # The governance ConfigMap is the deployment's; its digest makes a
         # change to it a rollout, and so a sync (row 10).
         checksum/governance: {{ . | quote }}
@@ -73,10 +73,10 @@ spec:
             items:
               - {key: edr-verification.properties, path: edr-verification.properties}
         {{- end }}
-        {{- if .Values.governance.configMap }}
+        {{- if include "conn.governanceConfigMap" . }}
         - name: governance
           configMap:
-            name: {{ .Values.governance.configMap }}
+            name: {{ include "conn.governanceConfigMap" . }}
         {{- end }}
         {{- if .Values.vocabularies.configMap }}
         - name: vocabularies

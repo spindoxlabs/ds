@@ -190,6 +190,114 @@ async def create_enrolment_token(
     )
 
 
+#: The shortest code :func:`register_enrolment_code` accepts. A generated code is
+#: ``token_urlsafe(32)``, 43 characters; a supplied one may not be weaker by much.
+MIN_SUPPLIED_CODE_LENGTH = 32
+
+
+@dataclass(frozen=True, slots=True)
+class RegisteredCode:
+    """What :func:`register_enrolment_code` did. Never carries the code."""
+
+    outcome: str  # registered | already-registered | rearmed | already-enrolled
+    owner_alias: str
+    expires_at: datetime | None
+
+
+async def register_enrolment_code(
+    db: AsyncSession,
+    owner_alias: str,
+    code: str,
+    *,
+    ttl_days: int | None = 14,
+    label: str | None = None,
+    created_by: str | None = None,
+    roles: list[str] | None = None,
+    allowed_scopes: list[str] | None = None,
+) -> RegisteredCode:
+    """Register a code the **deployment** supplied, idempotently.
+
+    The chart path for a co-hosted participant (docs/deployment/operations.md,
+    "Enrolment"): the deployment generates one code per participant into its
+    secrets file, the anchor's install/upgrade hook calls this, and the
+    participant's own registry spends the code. Because the hook runs on every
+    upgrade, a second call changes nothing, and it **never re-opens an owner that
+    has enrolled**: once any code of this owner has been redeemed, nothing is
+    registered — re-enrolment stays the explicit act it is (a fresh code from
+    ``ir-cli org enrolment-token`` and ``participant init --force``).
+
+    An unspent code that expired is re-armed with a fresh lifetime: the upgrade
+    that runs this is an operator's act, and the participant may simply not have
+    come up in time.
+
+    The same gates as a generated code: a verified owner, roles from the closed
+    vocabulary. Only the hash is stored.
+    """
+    if len(code) < MIN_SUPPLIED_CODE_LENGTH:
+        raise EnrolmentError(
+            f"the supplied enrolment code is {len(code)} characters; at least "
+            f"{MIN_SUPPLIED_CODE_LENGTH} are required (generate it with "
+            "helm/tools/generate_secrets.py)",
+            status_code=422,
+        )
+    _validate_roles(list(roles or []))
+    owner = (
+        await db.execute(select(Owner).where(Owner.id == owner_alias))
+    ).scalar_one_or_none()
+    if owner is None:
+        raise EnrolmentError(f"Owner {owner_alias!r} does not exist", status_code=404)
+    if owner.status != "verified":
+        raise EnrolmentError(
+            f"Owner {owner_alias!r} is {owner.status!r}; only a verified "
+            "organisation may be issued an enrolment token",
+            status_code=409,
+        )
+
+    redeemed = (
+        await db.execute(
+            select(EnrolmentToken.id).where(
+                EnrolmentToken.owner_alias == owner_alias,
+                EnrolmentToken.redeemed_at.is_not(None),
+            )
+        )
+    ).first()
+    if redeemed is not None:
+        return RegisteredCode("already-enrolled", owner_alias, None)
+
+    expires_at = datetime.now(UTC) + timedelta(days=ttl_days) if ttl_days else None
+    existing = (
+        await db.execute(
+            select(EnrolmentToken).where(EnrolmentToken.code_hash == hash_code(code))
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        if existing.owner_alias != owner_alias:
+            raise EnrolmentError(
+                "the supplied enrolment code is already registered for another "
+                "owner; one code, one organisation",
+                status_code=409,
+            )
+        if _expired(existing, datetime.now(UTC)):
+            existing.expires_at = expires_at
+            await db.flush()
+            return RegisteredCode("rearmed", owner_alias, expires_at)
+        return RegisteredCode("already-registered", owner_alias, existing.expires_at)
+
+    db.add(
+        EnrolmentToken(
+            code_hash=hash_code(code),
+            owner_alias=owner_alias,
+            label=label,
+            created_by=created_by,
+            roles=list(roles) if roles else None,
+            allowed_scopes=list(allowed_scopes) if allowed_scopes else None,
+            expires_at=expires_at,
+        )
+    )
+    await db.flush()
+    return RegisteredCode("registered", owner_alias, expires_at)
+
+
 def _expired(token: EnrolmentToken, now: datetime) -> bool:
     if token.expires_at is None:
         return False

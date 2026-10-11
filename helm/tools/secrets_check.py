@@ -11,7 +11,8 @@ what no single pod can see and what the render policy cannot know:
   from `services/keycloak/clients*.yaml` (`secret: ${VAR:-<client id>}`), so a
   client added there is covered without editing this;
 * a custody key shared between two holders (the anchor's and every
-  participant's encryption key, every two participants' control keys);
+  participant's encryption key, every two participants' control keys and
+  enrolment codes);
 * every participant's EDR key halves agreeing: the public JWK is the private one
   without its private members (chart parity OQ1, option b).
 
@@ -43,7 +44,9 @@ DEV_LITERALS = {
     "change-me-local-client-secret",
 }
 PRIVATE_MEMBERS = {"d", "p", "q", "dp", "dq", "qi"}
-CUSTODY_PER_PARTICIPANT = ("identityRegistryEncryptionKey", "edcControlApiKey")
+# Never shared between two participants: the custody keys, and the enrolment code
+# (one code, one organisation).
+CUSTODY_PER_PARTICIPANT = ("identityRegistryEncryptionKey", "edcControlApiKey", "enrolmentCode")
 
 
 def weak_form(value: str) -> str:

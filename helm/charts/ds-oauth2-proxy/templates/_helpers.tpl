@@ -4,7 +4,7 @@ own. One host means one cookie domain and one redirect URI to register, and the
 sign-in round trip never leaves the origin the user is already on.
 */}}
 {{- define "oauth2proxy.host" -}}
-{{- printf "%s.%s" (((.Values.global).hosts).portal | default "portal") (.Values.global).baseDomain -}}
+{{- .Values.host | default (printf "%s.%s" (((.Values.global).hosts).portal | default "portal") (.Values.global).baseDomain) -}}
 {{- end -}}
 
 {{/*

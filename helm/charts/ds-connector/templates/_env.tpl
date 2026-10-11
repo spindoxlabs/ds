@@ -127,8 +127,8 @@ governance.yaml, which the governance ConfigMap carries.
 - name: CONNECTOR_GOVERNANCE_YAML_PATH
   value: {{ printf "%s/governance.yaml" .Values.governance.mountPath | quote }}
 {{- with .Values.governance.odrlProfileFile }}
-{{- if not $.Values.governance.configMap }}
-{{- fail "governance.odrlProfileFile names a file in governance.configMap, which is not set" }}
+{{- if not (include "conn.governanceConfigMap" $) }}
+{{- fail "governance.odrlProfileFile names a file in governance.files or governance.configMap, and neither is set" }}
 {{- end }}
 # The deployment's ODRL profile, from the governance mount (row 9).
 - name: CONNECTOR_ODRL_PROFILE_PATH

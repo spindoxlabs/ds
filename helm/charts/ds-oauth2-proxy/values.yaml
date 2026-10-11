@@ -12,6 +12,11 @@ participant:
   name: provider
   role: provider
 
+# The portal's host, which this proxy is served on under /oauth2 (one origin, one
+# redirect URI: https://<host>/oauth2/callback, to be registered on the realm's
+# client). "" → <global.hosts.portal>.<global.baseDomain>.
+host: ""
+
 # Not a ds image — upstream oauth2-proxy. `image.repository` is set verbatim
 # rather than derived from `global.image.prefix`, which builds ghcr.io/spindoxlabs/ds-*.
 image:

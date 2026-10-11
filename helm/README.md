@@ -82,6 +82,14 @@ Three things the base does that a deployment should know:
 - **Your environment name must be one ds declares** (`staging`, `production`).
   Helmfile skips a sub-helmfile in an environment it does not declare, silently
   (`no releases found`).
+- **A participant is a profile**: `name`, a boolean `enabled` (false renders
+  nothing at all), `role`, and the switches `portal` (with its own `host`),
+  `federatedCatalog`, `collector`, `enrolment`. `participantDefaults` is merged
+  under each entry. The seed and governance are passed as content
+  (`bootstrap.seedFiles`, `governanceFiles`, `connector.governance.files`), and
+  the charts render the ConfigMaps and their checksums. Database names take
+  `global.postgres.databases.namePrefix`, and each password is
+  `secrets.postgres.<database name>`. docs/deployment/configuration.md has it all.
 - **ds's base `values.yaml` lists no participants.** Helmfile merges a list over
   a list element by element, so an example list in the base would leak into
   your render. ds's own example participants are in `values.example.yaml`, read
@@ -171,14 +179,18 @@ pilot-shaped values are `tests/pilot/values.yaml`. See the store playbook
 
 ```bash
 export KUBECONFIG=$PWD/.minikube.kubeconfig   # a kubeconfig of its own, never the default
+task helm:minikube:certs
 task helm:minikube:build-images
-task helm:minikube:all                        # minikube + Calico, local CA, bundled realm and
-                                              # Postgres, anchor + example-rec + example-dso,
-                                              # enrolment, data-plane stand-in
-task helm:minikube:gates -- all
+task helm:standalone:all                      # minikube + Calico, local CA, stand-in realm and
+                                              # Postgres, anchor + example-rec + example-dso
+                                              # (enrolled by the charts), data-plane stand-in
+task helm:standalone:gates -- all
 ```
 
-`helm/minikube/` holds the steps (`minikube.sh`), the `minikube` environment's values, a
+`helm/minikube/` holds the cluster's steps (`minikube.sh`: cluster, CA, CoreDNS, images),
+ds's stand-in platform and lifecycle without a host platform (`standalone.sh`), their shared
+configuration (`env.sh`), the `minikube` environment's values (every dev default: the
+profiles, the seed and governance read from the binding, enrolment, the collector pair), a
 generic binding (owners, agreement, governance, organisation clients), the local-CA image
-layer and the gates. A deployment rehearses with the same steps and its own files: see
-[docs/deployment/local-cluster.md](../docs/deployment/local-cluster.md).
+layer and the gates. A deployment rehearses with `minikube.sh`, its own infrastructure and
+its own helmfile: see [docs/deployment/local-cluster.md](../docs/deployment/local-cluster.md).

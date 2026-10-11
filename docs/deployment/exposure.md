@@ -6,7 +6,14 @@ in-cluster callers.
 
 ## The public surface — three host shapes
 
-### `portal.<baseDomain>` — the only human-facing host
+### `portal.<baseDomain>` — the human-facing host, one per portal
+
+Every participant with `portal.enabled` gets a portal host: `portal.<baseDomain>` unless its
+profile sets `portal.host`. Two portals on one host fail the render (one Ingress owner per
+host and path); each host is shaped as below, and each needs its redirect URI
+(`https://<host>/oauth2/callback`) on the realm's login client. The proxies share the cookie
+secret and the cookie domain (`.<baseDomain>`), so one sign-in serves every portal of the
+dataspace.
 
 | Path | Backend |
 |---|---|
@@ -17,8 +24,9 @@ The portal is server-side rendered, so the browser never calls the connector, pr
 catalogue directly. The dev Caddy `/api/*` fan-in exists only because the dev portal can run on
 the host, and is **not reproduced** in the charts.
 
-The chart sets `ORIGIN=https://portal.<baseDomain>`. It must match oauth2-proxy's `redirect_url`
-and the redirect URI registered on the realm's login client, or the login flow fails.
+The chart sets `ORIGIN=https://<portal host>`. It must match oauth2-proxy's `redirect_url`
+and the redirect URI registered on the realm's login client, or the login flow fails; the
+helmfile gives both releases the same host.
 
 !!! warning "`auth-response-headers` is part of the authentication boundary"
     The portal does not verify the forwarded token's signature — it reads the token the proxy

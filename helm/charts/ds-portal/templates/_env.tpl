@@ -3,8 +3,12 @@ Portal environment. The portal is SSR — these upstreams are called server-side
 never from the browser, so they use in-cluster DNS. Sibling releases follow
 ds-<service>-<participant>.
 */}}
+{{- define "portal.host" -}}
+{{- .Values.host | default (printf "%s.%s" (((.Values.global).hosts).portal | default "portal") (.Values.global).baseDomain) -}}
+{{- end -}}
+
 {{- define "portal.origin" -}}
-{{- printf "https://%s.%s" (((.Values.global).hosts).portal | default "portal") (.Values.global).baseDomain -}}
+{{- printf "https://%s" (include "portal.host" .) -}}
 {{- end -}}
 
 {{- define "portal.env" -}}

@@ -1,6 +1,6 @@
 # The bundled Postgres of a local cluster: one CloudNativePG instance (TLS on, as the
 # charts' `sslMode: require` expects), superuser access for the operator step that
-# creates one database and owner role per service (minikube.sh databases). A shared
+# creates one database and owner role per service (standalone.sh databases). A shared
 # environment brings its own cluster (helm/docs/cnpg-cluster.example.yaml).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster

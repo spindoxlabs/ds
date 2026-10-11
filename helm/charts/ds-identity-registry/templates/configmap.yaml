@@ -1,0 +1,34 @@
+{{- /*
+ds3: the anchor's seed and governance, rendered from the content the deployment
+passes (`bootstrap.seedFiles`, `bootstrap.governanceFiles`). The pod carries a
+digest of each (deployment.yaml), so a changed owners.yaml or governance file
+rolls the anchor and its bootstrap re-runs. Keys are flat file names: a ConfigMap
+key cannot hold `/`; `bootstrap.seedItems` maps them back to nested paths.
+*/}}
+{{- if and (eq (include "ir.role" .) "trust-anchor") .Values.bootstrap.seedFiles }}
+{{- $_ := include "ir.seedConfigMap" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ds.fullname" . }}-seed
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+data:
+  {{- range $key, $content := .Values.bootstrap.seedFiles }}
+  {{ $key | quote }}: {{ toString $content | quote }}
+  {{- end }}
+{{- end }}
+{{- if and (eq (include "ir.role" .) "trust-anchor") .Values.bootstrap.governanceFiles }}
+{{- $_ := include "ir.governanceConfigMap" . }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ds.fullname" . }}-governance
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+data:
+  {{- range $key, $content := .Values.bootstrap.governanceFiles }}
+  {{ $key | quote }}: {{ toString $content | quote }}
+  {{- end }}
+{{- end }}

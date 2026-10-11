@@ -43,6 +43,43 @@ reachable by nobody. It is in no Ingress on any chart.
 */}}
 {{ include "ds.networkPolicy.metricsFromPrometheus" (dict "ctx" . "port" .Values.service.port) }}
 ---
+{{- with .Values.networkPolicy.ingressFrom }}
+# Callers outside the participant namespaces, named one by one: the host
+# platform's onboarding, which calls /owners, /memberships and /admin (on no
+# Ingress). Exactly the namespace given, and with `podLabels` exactly those pods,
+# on the service port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" $ }}-from-callers
+  labels:
+    {{- include "ds.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" $ | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+{{- range $i, $peer := . }}
+{{- if not $peer.namespace }}
+{{- fail (printf "networkPolicy.ingressFrom[%d] has no namespace — an empty namespaceSelector admits every namespace in the cluster" $i) }}
+{{- end }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $peer.namespace | quote }}
+          {{- with $peer.podLabels }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+{{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.service.port }}
+---
+{{- end }}
 # Egress: Keycloak over TLS. The registry verifies every JWT against the JWKS
 # endpoint, so without this rule the default-deny baseline (DNS + Postgres only)
 # fails every authenticated request. The optional keycloak-org-sync init
@@ -67,4 +104,43 @@ spec:
               - 169.254.169.254/32 # cloud metadata endpoint
       ports:
         - {protocol: TCP, port: 443}
+{{- if or (include "ir.anchorEnrols" .) (include "ir.participantEnrols" .) (include "ir.anchorPairs" .) }}
+---
+# ds4/ds1: the enrolment and collector Jobs' pods, which carry labels of their
+# own (`ir.jobPodLabels`) so they never join the Service. Nobody calls them; they
+# reach Postgres, and a participant's also its anchor over TLS (the enrolment).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" . }}-enrolment
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "ds.name" . }}
+      app.kubernetes.io/instance: {{ include "ir.jobInstance" . }}
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32 # cloud metadata endpoint
+      ports:
+        - {protocol: TCP, port: {{ ((.Values.global).postgres).port | default 5432 }}}
+        {{- if include "ir.participantEnrols" . }}
+        - {protocol: TCP, port: 443}
+        {{- end }}
+{{- end }}
 {{- end }}

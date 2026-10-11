@@ -35,13 +35,16 @@ change.
 
 | Database | Owner role | Used by |
 |---|---|---|
-| `identity_registry` | `identity_registry` | ds-identity-registry |
+| `identity_registry` | `identity_registry` | ds-identity-registry (the anchor) |
+| `identity_registry_<participant>` | `identity_registry_<participant>` | the participant's own ds-identity-registry |
 | `connector_<participant>` | `connector_<participant>` | ds-connector |
 | `provenance_<participant>` | `provenance_<participant>` | ds-provenance |
 | `edc_<participant>` | `edc_<participant>` | ds-edc |
 
-One authority database plus **three per participant** — seven for the two-participant example
-shipped in `helm/values.yaml`. Each role owns its own database and has no rights on any other.
+One authority database plus **four per participant** (`-` in a name becomes `_`). On a cluster
+shared with a host platform, `global.postgres.databases.namePrefix` (e.g. `ds_`) prefixes every
+name and role, and the secrets file keys each password by the prefixed name
+([Configuration](configuration.md#postgresql)). Each role owns its own database and has no rights on any other.
 CNPG's `spec.managed.roles` and `spec.bootstrap.initdb.postInitApplicationSQL` handle this
 declaratively; see the example manifest.
 
@@ -118,7 +121,7 @@ ingress controller:
 
 | Host | Purpose |
 |---|---|
-| `portal.<baseDomain>` | the only human-facing host — the portal **and** `/oauth2/*` |
+| `portal.<baseDomain>` | the human-facing host — the portal **and** `/oauth2/*`; one more per participant portal with its own `portal.host` |
 | `<participant>.<baseDomain>` | `did:web` identity + DSP protocol + data plane, one per participant |
 | `trust-anchor.<baseDomain>` | the trust-anchor DID document and the revocation list |
 | — | a person's DID resolves on **their organisation's** host, at `/users/<id>/did.json`; no host of its own (`DID-11`) |

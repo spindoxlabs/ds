@@ -1,0 +1,147 @@
+{{- /*
+================================================================================
+ds4: enrolment of a co-hosted participant, through the charts (off by default)
+
+docs/deployment/operations.md, "Enrolment". The handshake is unchanged (D-51): the
+anchor admits a verified owner with a single-use code, and the participant's own
+registry presents it inside a token signed by the key it generated, which the anchor
+verifies against the DID document the participant publishes. What the chart takes
+over is moving the code, which was a `kubectl exec` on each side:
+
+  - the code is the deployment's, one per participant
+    (`secrets.participants.<p>.enrolmentCode`, generated with the other secrets),
+    so it never travels between pods and no pod needs the Kubernetes API;
+  - the anchor's post-install/post-upgrade hook registers it for owner <p>
+    (`ir-cli org enrolment-token --code-env`, idempotent, and a no-op once the
+    owner has enrolled);
+  - the participant release runs a Job that spends it once, if not enrolled.
+
+**Why a Job, not an init container, and not a hook.** The anchor fetches the
+participant's DID document from `https://<p>.<baseDomain>`, served by this release's
+running container through the `ds-edc-<p>` Ingress, which is installed after this
+release. An init container would present the code before the document exists, and a
+hook would deadlock: `ds-edc-<p>` waits for this release, which would wait for its
+hook. The Job retries until the document resolves (and the anchor has registered the
+code), bounded by `enrolment.activeDeadlineSeconds`. Its name carries a digest of
+what it enrols, so an upgrade with the same inputs leaves the finished Job alone.
+================================================================================
+*/}}
+{{- if include "ir.anchorEnrols" . }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "ds.fullname" . }}-enrolment
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  {{- range .Values.enrolment.participants }}
+  {{ include "ir.enrolmentCodeEnv" .alias }}: {{ required (printf "enrolment.participants names %s: secrets.enrolmentCodes.%s is required" .alias .alias) (index $.Values.secrets.enrolmentCodes .alias | default "") | quote }}
+  {{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ds.fullname" . }}-enrolment
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    # After the anchor is ready: its bootstrap has imported and verified the owners.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.enrolment.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "ir.jobPodLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- include "ds.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ds.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ds.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: enrolment
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          workingDir: /app
+          command: ["/bin/sh", "-euc"]
+          args:
+            - |
+              {{- range .Values.enrolment.participants }}
+              ir-cli org enrolment-token --alias {{ .alias }} --roles {{ join "," .roles }}{{ range .scopes }} --scope {{ . }}{{ end }} --ttl-days {{ $.Values.enrolment.ttlDays }} --label chart-enrolment --code-env {{ include "ir.enrolmentCodeEnv" .alias }}
+              {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "ds.fullname" . }}-enrolment
+          env:
+            {{- include "ir.env" . | nindent 12 }}
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+          resources:
+            {{- toYaml (.Values.resources | default ((.Values.global).resources)) | nindent 12 }}
+      volumes:
+        {{- include "ds.tmpVolume" . | nindent 8 }}
+{{- end }}
+{{- if include "ir.participantEnrols" . }}
+{{- $digest := printf "%s|%s" (include "ds.image" .) .Values.participant.did | sha256sum | trunc 8 }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-enrol-%s" (include "ds.fullname" .) $digest }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.enrolment.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.enrolment.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "ir.jobPodLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- include "ds.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ds.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ds.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: enrol
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          workingDir: /app
+          command: ["/bin/sh", "-uc"]
+          args:
+            - |
+              # Spent once: an enrolled instance presents nothing (`participant
+              # status` exits 0), and `participant init` itself refuses to
+              # re-present a code to an anchor that already issued to it.
+              until ir-cli participant status --quiet; do
+                if ir-cli participant init --code "$ENROLMENT_CODE"; then
+                  break
+                fi
+                echo "not enrolled yet: the anchor has not registered the code, or this participant's DID document does not resolve yet; retrying in {{ .Values.enrolment.retrySeconds }}s"
+                sleep {{ .Values.enrolment.retrySeconds }}
+              done
+              ir-cli participant status
+          env:
+            {{- include "ir.env" . | nindent 12 }}
+            - name: ENROLMENT_CODE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ds.secretName" . }}
+                  key: ENROLMENT_CODE
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+          resources:
+            {{- toYaml (.Values.resources | default ((.Values.global).resources)) | nindent 12 }}
+      volumes:
+        {{- include "ds.tmpVolume" . | nindent 8 }}
+{{- end }}

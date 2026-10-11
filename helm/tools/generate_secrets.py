@@ -4,14 +4,17 @@
         helm/tools/generate_secrets.py --values <values file> --out <secrets file> \
         [--collector <organisation alias>]... [--force]
 
-Used by the minikube setup (`task helm:minikube:secrets`, docs/deployment/local-cluster.md)
+Used by the minikube setup (`task helm:standalone:secrets`, docs/deployment/local-cluster.md)
 and by a deployment rehearsing on one. **Not** for a shared environment: there the secrets
 are chosen, encrypted and backed up by the operator (docs/deployment/secrets.md). The
 output must stay out of version control. An existing file is left alone unless
 ``--force`` is given: regenerating it under a running system changes every secret.
 
 Shape: every key of ``helm/secrets.example.yaml`` for the participants the values file
-enables (a ``.gotmpl`` values file is read as YAML; its template expressions must sit in
+enables, the database passwords keyed by the database names the charts derive
+(``global.postgres.databases``, ``namePrefix`` included), an ``enrolmentCode`` for each
+participant with ``enrolment.enabled``, and a collector secret for each with
+``collector.enabled`` (plus any ``--collector``) (a ``.gotmpl`` values file is read as YAML; its template expressions must sit in
 quoted strings). Real material where a service parses it:
 Fernet keys for the registries' encryption keys and the connector's at-rest keys, an
 EC P-256 key pair for each EDC's EDR signing key (the public half kept beside it, as
@@ -60,18 +63,39 @@ def edr_pair(kid: str) -> tuple[str, str]:
     return json.dumps(private), json.dumps(public)
 
 
+def database_names(values: dict) -> tuple[str, dict[str, str]]:
+    """The anchor's database and the per-participant bases, as the charts derive them."""
+    dbs = ((values.get("global") or {}).get("postgres") or {}).get("databases") or {}
+    prefix = dbs.get("namePrefix") or ""
+    anchor = prefix + (dbs.get("identityRegistry") or "identity_registry")
+    bases = {
+        svc: prefix + (dbs.get(key) or default)
+        for svc, key, default in (
+            ("identity_registry", "identityRegistryPrefix", "identity_registry"),
+            ("connector", "connectorPrefix", "connector"),
+            ("provenance", "provenancePrefix", "provenance"),
+            ("edc", "edcPrefix", "edc"),
+        )
+    }
+    return anchor, bases
+
+
 def build(values: dict, collectors: list[str]) -> dict:
     svc_edc = token()
-    postgres = {"identity_registry": token()}
+    anchor_db, bases = database_names(values)
+    postgres = {anchor_db: token()}
     participants: dict[str, dict] = {}
     org_clients: dict[str, dict] = {}
+    collectors = list(collectors)
     for p in values.get("participants") or []:
-        if not p.get("enabled"):
+        if p.get("enabled") is not True:
             continue
         name = p["name"]
         db = name.replace("-", "_")
-        for prefix in ("identity_registry", "connector", "provenance", "edc"):
-            postgres[f"{prefix}_{db}"] = token()
+        for base in bases.values():
+            postgres[f"{base}_{db}"] = token()
+        if (p.get("collector") or {}).get("enabled") is True and name not in collectors:
+            collectors.append(name)
         private, public = edr_pair(f"{name}-edr-1")
         participants[name] = {
             "organisationClientSecret": token(),
@@ -88,6 +112,9 @@ def build(values: dict, collectors: list[str]) -> dict:
             "stsSecret": token(),
             "identityRegistryEncryptionKey": fernet(),
         }
+        if (p.get("enrolment") or {}).get("enabled") is True:
+            # Single use, registered by the anchor's hook, spent by the participant.
+            participants[name]["enrolmentCode"] = secrets.token_urlsafe(32)
     # Posture B: the collector client's secret is a realm value and onboarding's, not a
     # chart value. Kept here, outside `secrets:`, so the realm sync has one source.
     for alias in collectors:

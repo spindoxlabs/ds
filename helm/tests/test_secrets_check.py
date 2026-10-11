@@ -117,6 +117,17 @@ def test_a_shared_custody_key_is_named(tmp_path, clean):
     assert "edcControlApiKey" in r.stdout
 
 
+def test_a_shared_enrolment_code_is_named(tmp_path, clean):
+    """One code, one organisation (ds4). *Red:* drop `enrolmentCode` from the
+    per-participant uniqueness check."""
+    p = clean["secrets"]["participants"]
+    p["example-rec"]["enrolmentCode"] = "x" * 48
+    p["example-dso"]["enrolmentCode"] = "x" * 48
+    r = _check(tmp_path, clean)
+    assert r.returncode != 0
+    assert "enrolmentCode" in r.stdout
+
+
 def test_edr_halves_that_do_not_match_are_named(tmp_path, clean):
     """P4: the public JWK must be the private one without its private members.
     *Red:* compare only the `kid`, then give the public value a matching `kid`

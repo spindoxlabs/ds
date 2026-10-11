@@ -1,10 +1,10 @@
 """The `minikube` environment renders a production-posture deployment with generic names.
 
-`helmfile -e minikube` is what `helm/minikube/minikube.sh` installs on a local cluster
+`helmfile -e minikube` is what `helm/minikube/standalone.sh apply` installs on a local cluster
 (docs/deployment/local-cluster.md): the anchor and two participants, every guard armed
 (the secret policy runs: it is not `example`), images built into the node, the
 did:web internal allowance for the node's address (ADR-0029). Secrets are generated
-here, as `minikube.sh secrets` generates them there.
+here, as `standalone.sh secrets` generates them there.
 
 *Red:* drop the environment, let it render without DS_MK_NODE_IP, or let it pull images.
 """
@@ -86,3 +86,45 @@ def test_the_issuer_is_the_bundled_realm_on_the_local_domain(minikube):
     env = container_env(find(minikube, "Deployment", "ds-connector-example-dso"))
     assert env["CONNECTOR_OIDC_ISSUER_URL"] == "https://keycloak.ds.test/realms/dataspaces"
     assert env["CONNECTOR_PARTICIPANT_DID"] == "did:web:example-dso.ds.test"
+
+
+# ── The dev defaults are values, not script steps (ds5) ───────────────────────
+
+
+def test_the_seed_and_the_governance_come_from_the_binding_files(minikube, helm_copy: Path):
+    """No `configmaps` step: the values pass the binding's files and the charts render
+    them. *Red:* name a ConfigMap the script was to create instead."""
+    binding = helm_copy / "minikube" / "binding"
+    seed = find(minikube, "ConfigMap", "ds-identity-registry-seed")
+    assert seed["data"]["owners.yaml"] == (binding / "seed" / "owners.yaml").read_text()
+    assert seed["data"]["agreements.yaml"] == (binding / "seed" / "agreements.yaml").read_text()
+    gov = find(minikube, "ConfigMap", "ds-identity-registry-governance")
+    for p in ("example-rec", "example-dso"):
+        text = (binding / "governance" / p / "governance.yaml").read_text()
+        assert gov["data"][f"{p}.governance.yaml"] == text
+        assert find(minikube, "ConfigMap", f"ds-connector-{p}-governance")["data"]["governance.yaml"] == text
+
+
+def test_enrolment_and_the_collector_pair_are_the_charts(minikube):
+    """No `enrol` or `collectors` step (and no anchor restart): both participants
+    enrol through the charts, and the anchor pairs the community with the grid
+    operator. *Red:* switch either off in the minikube values."""
+    jobs = {o["metadata"]["name"] for o in minikube if o["kind"] == "Job"}
+    assert any(n.startswith("ds-identity-registry-example-rec-enrol-") for n in jobs), jobs
+    assert any(n.startswith("ds-identity-registry-example-dso-enrol-") for n in jobs), jobs
+    assert "ds-identity-registry-enrolment" in jobs
+    pairs = [o for o in minikube if o["kind"] == "Job" and "-collectors-" in o["metadata"]["name"]]
+    assert len(pairs) == 1
+    script = " ".join(" ".join(c.get("args") or []) for c in containers(pairs[0]))
+    assert '"did:web:example-dso.ds.test" "did:web:example-rec.ds.test"' in script
+
+
+def test_the_scripts_hold_no_participant_list():
+    """The participants, their collectors and their names are the values' alone.
+    *Red:* reintroduce DS_MK_PARTICIPANTS or DS_MK_COLLECTORS in a script."""
+    from conftest import HELM_DIR
+
+    for script in ("minikube.sh", "standalone.sh", "env.sh", "gates.sh"):
+        text = (HELM_DIR / "minikube" / script).read_text()
+        for name in ("DS_MK_PARTICIPANTS", "DS_MK_COLLECTORS", "configmaps", "step_enrol", "step_collectors"):
+            assert name not in text, (script, name)

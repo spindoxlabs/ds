@@ -3,7 +3,7 @@
 # participant DID, which EDC 0.18.0's v5 management API matches against
 # `edc.participant.context.id`. The scope lists are `ds_auth.ORGANISATION_CLIENT_*_SCOPES`
 # and `COLLECTOR_CLIENT_OPTIONAL_SCOPES`; the secrets come from the generated secrets
-# file (helm/minikube/minikube.sh realm-env). A deployment's own realm declares its own.
+# file (helm/minikube/standalone.sh realm-env). A deployment's own realm declares its own.
 clients:
   - client_id: svc-ds-connector-example-rec
     name: Example REC — organisation client

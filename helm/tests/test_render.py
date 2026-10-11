@@ -13,7 +13,20 @@ from collections import defaultdict
 from pathlib import Path
 
 import pytest
-from conftest import CHARTS, HELM_DIR, _key, _render, _run
+import yaml
+from conftest import (
+    CHARTS,
+    HELM_DIR,
+    PilotRender,
+    _key,
+    _render,
+    _run,
+    container_env,
+    containers,
+    find,
+    pod_spec,
+    release_of,
+)
 
 # The value that selected the removed ExternalSecret mode. Rendering with it set
 # proves no chart still reads it.
@@ -343,3 +356,541 @@ def test_a_collector_without_its_secret_does_not_render(helm_copy: Path) -> None
         "secrets.organisationClients.example-org.collectorSecret is required"
         in result.stderr
     )
+
+
+# ==============================================================================
+# The participant profile (WS-A of the deployment plan: ds1–ds4 and the database
+# names). Rendered through a deployment's own helmfile (`render_pilot`), the shape
+# a parent drives. Every test names the change that turns it red.
+# ==============================================================================
+
+
+REC, DSO = "example-rec", "example-dso"
+AUTH_NS = "example-ds"
+CODE_REC = "enrolment-code-of-example-rec-0123456789abcdef"
+CODE_DSO = "enrolment-code-of-example-dso-0123456789abcdef"
+
+
+def _p(values: dict, name: str) -> dict:
+    return next(p for p in values["participants"] if p["name"] == name)
+
+
+def _refused(render: PilotRender, *needles: str) -> None:
+    assert render.returncode != 0, "the render succeeded"
+    for needle in needles:
+        assert needle in render.stderr, render.stderr[-2000:]
+
+
+def _objects_of(objects: list[dict], release: str) -> list[dict]:
+    return [o for o in objects if release_of(o) == release]
+
+
+# ── ds1: participants as profiles; `enabled` honoured everywhere ──────────────
+
+
+def _add_disabled(values: dict) -> None:
+    # Only what a declared-but-off participant carries: no role, no blocks, and
+    # no secrets entry at all.
+    values["participants"].append({"name": "example-off", "enabled": False})
+
+
+def test_a_disabled_participant_renders_nothing(render_pilot):
+    """A declared participant with `enabled: false`, no role and no secrets leaves
+    no trace: no namespace, release, connector URL, ConfigMap or Secret. *Red:*
+    validate or range a participant before checking `enabled`."""
+    objects = render_pilot(values=_add_disabled).ok()
+    text = yaml.safe_dump_all(objects)
+    assert "example-off" not in text
+
+
+def test_a_participant_without_enabled_fails(render_pilot):
+    """`enabled` is the explicit flag: absent is an error, not "off". *Red:* drop the
+    presence check, and an entry missing the key silently renders nothing."""
+    def values(v):
+        del _p(v, DSO)["enabled"]
+    _refused(render_pilot(values=values), f"participants[{DSO}].enabled")
+
+
+def test_enabled_must_be_a_boolean(render_pilot):
+    """`enabled: "false"` is a string, which a template reads as true. *Red:* drop the
+    kind check."""
+    def values(v):
+        _p(v, DSO)["enabled"] = "false"
+    _refused(render_pilot(values=values), f"participants[{DSO}].enabled", "boolean")
+
+
+def test_a_role_outside_the_vocabulary_fails(render_pilot):
+    """*Red:* drop the role enum check: `producer` reaches the charts."""
+    def values(v):
+        _p(v, DSO)["role"] = "producer"
+    _refused(render_pilot(values=values), f"participants[{DSO}].role", "provider, consumer or both")
+
+
+def test_a_feature_switch_must_be_a_boolean(render_pilot):
+    """*Red:* drop the kind check on `portal.enabled`."""
+    def values(v):
+        _p(v, DSO)["portal"]["enabled"] = "yes"
+    _refused(render_pilot(values=values), f"participants[{DSO}].portal.enabled", "boolean")
+
+
+def test_participant_defaults_reach_every_participant(render_pilot):
+    """`participantDefaults` is merged under each entry; the entry wins. *Red:* drop
+    the merge, and DSO's connector admits nobody from the platform."""
+    def values(v):
+        v["participantDefaults"] = {
+            "connector": {"networkPolicy": {"ingressFrom": [
+                {"namespace": "example-shared", "podLabels": {"app.kubernetes.io/name": "writer"}}
+            ]}}
+        }
+        del _p(v, DSO)["connector"]["networkPolicy"]
+    objects = render_pilot(values=values).ok()
+    dso = find(objects, "NetworkPolicy", f"ds-connector-{DSO}-from-callers")
+    rec = find(objects, "NetworkPolicy", f"ds-connector-{REC}-from-callers")
+    assert "example-shared" in yaml.safe_dump(dso)
+    # REC's own list replaces the default.
+    assert "example-shared" not in yaml.safe_dump(rec)
+    assert "example-platform" in yaml.safe_dump(rec)
+
+
+def test_participant_defaults_refuse_identity_and_switches(render_pilot):
+    """A default `portal.enabled: true` could not be turned off by an entry (zero
+    values do not override in a merge), so only chart blocks are allowed. *Red:*
+    accept any key in `participantDefaults`."""
+    def values(v):
+        v["participantDefaults"] = {"portal": {"enabled": True}}
+    _refused(render_pilot(values=values), "participantDefaults.portal")
+
+
+# ── ds1: the collector switch ─────────────────────────────────────────────────
+
+
+def _collector(values: dict) -> None:
+    _p(values, REC)["collector"] = {"enabled": True, "holders": [DSO]}
+
+
+def test_a_collector_gets_its_pair_from_the_anchor(render_pilot):
+    """`collector.enabled` with holders renders the anchor's pairing Job, which adds
+    `holder ← collector` once both are active. *Red:* drop the collectors Job."""
+    objects = render_pilot(values=_collector).ok()
+    jobs = [o for o in objects if o["kind"] == "Job" and o["metadata"]["name"].startswith("ds-identity-registry-collectors-")]
+    assert len(jobs) == 1, [o["metadata"]["name"] for o in objects if o["kind"] == "Job"]
+    script = " ".join(" ".join(c.get("args") or []) for c in containers(jobs[0]))
+    assert f"did:web:{DSO}.ds.example.org" in script
+    assert f"did:web:{REC}.ds.example.org" in script
+    assert "ir-cli collector add" in script
+    # Not a hook: it waits for the enrolment, which happens after this release.
+    assert "helm.sh/hook" not in (jobs[0]["metadata"].get("annotations") or {})
+
+
+def test_no_collector_renders_no_pairing_job(pilot):
+    """*Red:* render the Job unconditionally."""
+    assert not [o for o in pilot if o["kind"] == "Job" and "-collectors-" in o["metadata"]["name"]]
+
+
+@pytest.mark.parametrize("holders", [[], ["example-nobody"], ["example-off"]])
+def test_a_collector_without_a_live_holder_fails(render_pilot, holders):
+    """No holder, an unknown one or a disabled one is a pair that can never form.
+    *Red:* drop the holder checks."""
+    def values(v):
+        _add_disabled(v)
+        _p(v, REC)["collector"] = {"enabled": True, "holders": holders}
+    _refused(render_pilot(values=values), f"participants[{REC}].collector.holders")
+
+
+# ── ds2: a portal host per participant ────────────────────────────────────────
+
+
+def _two_portals(values: dict) -> None:
+    _p(values, DSO)["portal"] = {"enabled": True, "replicaCount": 1}
+
+
+def test_two_portals_on_one_host_fail(render_pilot):
+    """Two portals defaulting to portal.<baseDomain> would collide on one Ingress
+    host. *Red:* drop the uniqueness check: the render succeeds with two owners of
+    the host."""
+    _refused(render_pilot(values=_two_portals), "portal.ds.example.org", REC, DSO)
+
+
+def test_each_portal_has_its_own_host(render_pilot):
+    """`portal.host` moves a participant's portal, its oauth2-proxy, its ORIGIN and
+    its connector's portal link together. *Red:* ignore `portal.host` in any of the
+    four."""
+    host = "portal-example-dso.ds.example.org"
+
+    def values(v):
+        _two_portals(v)
+        _p(v, DSO)["portal"]["host"] = host
+    objects = render_pilot(values=values).ok()
+
+    def hosts(release: str) -> set[str]:
+        return {
+            rule["host"]
+            for o in _objects_of(objects, release)
+            if o["kind"] == "Ingress"
+            for rule in o["spec"]["rules"]
+        }
+    assert hosts(f"ds-portal-{DSO}") == {host}
+    assert hosts(f"ds-oauth2-proxy-{DSO}") == {host}
+    assert hosts(f"ds-portal-{REC}") == {"portal.ds.example.org"}
+    assert hosts(f"ds-oauth2-proxy-{REC}") == {"portal.ds.example.org"}
+    portal_env = container_env(find(objects, "Deployment", f"ds-portal-{DSO}"))
+    assert portal_env["ORIGIN"] == f"https://{host}"
+    proxy = yaml.safe_dump([o for o in _objects_of(objects, f"ds-oauth2-proxy-{DSO}") if o["kind"] in ("ConfigMap", "Deployment")])
+    assert f"https://{host}/oauth2/callback" in proxy
+    conn_env = container_env(find(objects, "Deployment", f"ds-connector-{DSO}"))
+    assert conn_env["CONNECTOR_NOTIFY_PORTAL_BASE_URL"] == f"https://{host}"
+
+
+# ── ds3: seed and governance ConfigMaps from values ───────────────────────────
+
+
+GOV = "# governance of example-dso\ndatasets: {}\n"
+
+
+def _gov_files(values: dict) -> None:
+    gov = _p(values, DSO)["connector"]["governance"]
+    gov.pop("configMap")
+    gov.pop("checksum")
+    gov["files"] = {"governance.yaml": GOV, "governance.staging.yaml": "datasets: {}\n", "odrl-profile.yaml": "profile: {}\n"}
+
+
+def test_governance_files_render_the_connectors_configmap(render_pilot):
+    """The parent passes content; the chart renders the ConfigMap, mounts it and
+    derives the checksum from it. *Red:* drop the ConfigMap template or the mount."""
+    objects = render_pilot(values=_gov_files).ok()
+    cm = find(objects, "ConfigMap", f"ds-connector-{DSO}-governance")
+    assert cm["data"]["governance.yaml"] == GOV
+    dep = find(objects, "Deployment", f"ds-connector-{DSO}")
+    vols = {v["name"]: v for v in pod_spec(dep)["volumes"]}
+    assert vols["governance"]["configMap"]["name"] == f"ds-connector-{DSO}-governance"
+    checksum = dep["spec"]["template"]["metadata"]["annotations"]["checksum/governance"]
+    assert len(checksum) == 64
+    # The sync hook and the catalogue test read the same ConfigMap.
+    sync = find(objects, "Job", f"ds-connector-{DSO}-sync")
+    assert sync
+
+
+def test_the_governance_checksum_follows_the_content(render_pilot):
+    """*Red:* compute the checksum from anything but the files (or not at all)."""
+    def sums(gov: str) -> str:
+        def values(v):
+            _gov_files(v)
+            _p(v, DSO)["connector"]["governance"]["files"]["governance.yaml"] = gov
+        dep = find(render_pilot(values=values).ok(), "Deployment", f"ds-connector-{DSO}")
+        return dep["spec"]["template"]["metadata"]["annotations"]["checksum/governance"]
+    assert sums(GOV) != sums(GOV + "# changed\n")
+
+
+@pytest.mark.parametrize("extra", ["configMap", "checksum"])
+def test_governance_files_with_a_configmap_or_checksum_fail(render_pilot, extra):
+    """Two sources for one mount, or a hand digest of content the chart hashes
+    itself. *Red:* let either through."""
+    def values(v):
+        _gov_files(v)
+        _p(v, DSO)["connector"]["governance"][extra] = "x"
+    _refused(render_pilot(values=values), "governance.files", f"governance.{extra}")
+
+
+SEED = {"agreements.yaml": "agreements: []\n", "owners.yaml": "owners: []\n", "participation-en.md": "# terms\n", "bootstrap.sh": "true\n"}
+
+
+def _seed_files(values: dict) -> None:
+    b = values["authority"]["identityRegistry"]["bootstrap"]
+    b.pop("seedConfigMap")
+    b.pop("governanceConfigMap")
+    b["seedFiles"] = dict(SEED)
+    b["governanceFiles"] = {f"{REC}.governance.yaml": "datasets: {}\n", f"{DSO}.governance.yaml": GOV}
+
+
+def test_seed_and_governance_files_render_the_anchors_configmaps(render_pilot):
+    """*Red:* drop the anchor's ConfigMap templates, their mounts or checksums."""
+    objects = render_pilot(values=_seed_files).ok()
+    seed = find(objects, "ConfigMap", "ds-identity-registry-seed")
+    gov = find(objects, "ConfigMap", "ds-identity-registry-governance")
+    assert seed["data"] == SEED
+    assert gov["data"][f"{DSO}.governance.yaml"] == GOV
+    dep = find(objects, "Deployment", "ds-identity-registry")
+    vols = {v["name"]: v for v in pod_spec(dep)["volumes"]}
+    assert vols["seed"]["configMap"]["name"] == "ds-identity-registry-seed"
+    # seedItems still map keys to nested paths.
+    assert {"key": "participation-en.md", "path": "content/participation-en.md"} in vols["seed"]["configMap"]["items"]
+    assert vols["governance"]["configMap"]["name"] == "ds-identity-registry-governance"
+    ann = dep["spec"]["template"]["metadata"]["annotations"]
+    assert len(ann["checksum/seed"]) == 64 and len(ann["checksum/governance"]) == 64
+
+
+def test_the_seed_checksum_follows_the_content(render_pilot):
+    """A changed owners.yaml rolls the anchor, so its bootstrap re-runs. *Red:* no
+    checksum, or one over anything else."""
+    def sums(owners: str) -> str:
+        def values(v):
+            _seed_files(v)
+            v["authority"]["identityRegistry"]["bootstrap"]["seedFiles"]["owners.yaml"] = owners
+        dep = find(render_pilot(values=values).ok(), "Deployment", "ds-identity-registry")
+        return dep["spec"]["template"]["metadata"]["annotations"]["checksum/seed"]
+    assert sums("owners: []\n") != sums("owners: [{id: x}]\n")
+
+
+@pytest.mark.parametrize("pair", [("seedFiles", "seedConfigMap"), ("governanceFiles", "governanceConfigMap")])
+def test_anchor_files_with_a_configmap_fail(render_pilot, pair):
+    """*Red:* let both sources through."""
+    def values(v):
+        _seed_files(v)
+        v["authority"]["identityRegistry"]["bootstrap"][pair[1]] = "x"
+    _refused(render_pilot(values=values), f"bootstrap.{pair[0]}", f"bootstrap.{pair[1]}")
+
+
+# ── ds4: enrolment of co-hosted participants ──────────────────────────────────
+
+
+def _enrol(values: dict) -> None:
+    for name in (REC, DSO):
+        _p(values, name)["enrolment"] = {"enabled": True}
+
+
+def _codes(s: dict) -> None:
+    s["secrets"]["participants"][REC]["enrolmentCode"] = CODE_REC
+    s["secrets"]["participants"][DSO]["enrolmentCode"] = CODE_DSO
+
+
+def test_enrolment_is_off_by_default(pilot):
+    """*Red:* render the enrolment objects unconditionally."""
+    names = [o["metadata"]["name"] for o in pilot]
+    assert not [n for n in names if "enrol" in n], [n for n in names if "enrol" in n]
+
+
+def test_the_anchor_registers_each_code_in_a_hook(render_pilot):
+    """The anchor's post-install/upgrade hook registers each co-hosted participant's
+    code, read from a Secret, with the roles and scopes its role implies. *Red:* drop
+    the hook, its `--code-env`, or derive the wrong roles."""
+    objects = render_pilot(values=_enrol, secrets_=_codes).ok()
+    hook = find(objects, "Job", "ds-identity-registry-enrolment")
+    ann = hook["metadata"]["annotations"]
+    assert ann["helm.sh/hook"] == "post-install,post-upgrade"
+    script = " ".join(" ".join(c.get("args") or []) for c in containers(hook))
+    assert "--alias example-rec --roles provider,consumer" in script
+    assert "--scope owner:example-rec:member" in script
+    assert "--alias example-dso --roles provider " in script
+    assert "--scope owner:example-dso:member" not in script
+    assert script.count("--code-env") == 2
+    assert CODE_REC not in yaml.safe_dump(hook)
+    codes = find(objects, "Secret", "ds-identity-registry-enrolment")
+    assert set(codes["stringData"].values()) == {CODE_REC, CODE_DSO}
+
+
+def test_the_participant_spends_its_code_once_in_a_job(render_pilot):
+    """The participant registry release spends its code in a Job that retries until
+    its DID document resolves (served by its running registry through ds-edc's
+    Ingress, after this release), and skips when enrolled. *Red:* make it a hook
+    (a deadlock with ds-edc), an init container, or drop the status check."""
+    objects = render_pilot(values=_enrol, secrets_=_codes).ok()
+    jobs = [o for o in _objects_of(objects, f"ds-identity-registry-{DSO}") if o["kind"] == "Job"]
+    assert len(jobs) == 1, [o["metadata"]["name"] for o in jobs]
+    job = jobs[0]
+    assert job["metadata"]["name"].startswith(f"ds-identity-registry-{DSO}-enrol-")
+    assert "helm.sh/hook" not in (job["metadata"].get("annotations") or {})
+    script = " ".join(" ".join(c.get("args") or []) for c in containers(job))
+    assert "ir-cli participant status --quiet" in script
+    assert "ir-cli participant init --code" in script
+    assert CODE_DSO not in yaml.safe_dump(job)
+    secret = find(objects, "Secret", f"ds-identity-registry-{DSO}")
+    assert secret["stringData"]["ENROLMENT_CODE"] == CODE_DSO
+    dep = find(objects, "Deployment", f"ds-identity-registry-{DSO}")
+    assert "ENROLMENT_CODE" not in yaml.safe_dump(pod_spec(dep).get("initContainers"))
+    assert "participant init --code" not in yaml.safe_dump(pod_spec(dep).get("initContainers"))
+
+
+def test_enrolment_without_a_code_fails(render_pilot):
+    """*Red:* drop the presence check: the hook fails on the cluster instead."""
+    _refused(render_pilot(values=_enrol), f"secrets.participants.{REC}.enrolmentCode")
+
+
+def test_a_short_or_shared_enrolment_code_fails(render_pilot):
+    """*Red:* drop the length or the uniqueness check."""
+    def short(s):
+        _codes(s)
+        s["secrets"]["participants"][DSO]["enrolmentCode"] = "short-code"
+    _refused(render_pilot(values=_enrol, secrets_=short), f"secrets.participants.{DSO}.enrolmentCode", "32")
+
+    def shared(s):
+        _codes(s)
+        s["secrets"]["participants"][DSO]["enrolmentCode"] = CODE_REC
+    _refused(render_pilot(values=_enrol, secrets_=shared), "enrolmentCode")
+
+
+# ── Database names: the deployment's prefix ───────────────────────────────────
+
+
+def _ds_prefix(values: dict) -> None:
+    values["global"].setdefault("postgres", {})["databases"] = {"namePrefix": "ds_"}
+
+
+def _ds_prefixed_passwords(s: dict) -> None:
+    pg = s["secrets"]["postgres"]
+    s["secrets"]["postgres"] = {f"ds_{k}": v for k, v in pg.items()}
+
+
+def test_a_name_prefix_renames_every_database_and_role(render_pilot):
+    """`namePrefix: ds_` gives the contract's role names, and each password is read
+    from `secrets.postgres.<that name>`. *Red:* derive any name or password key
+    without the prefix."""
+    objects = render_pilot(values=_ds_prefix, secrets_=_ds_prefixed_passwords).ok()
+    found = set()
+    for o in objects:
+        if o["kind"] != "Secret":
+            continue
+        user = (o.get("stringData") or {}).get("DB_USER") or (o.get("stringData") or {}).get("EDC_DB_USER")
+        if user:
+            found.add(user)
+    expected = {"ds_identity_registry"} | {
+        f"ds_{svc}_{p.replace('-', '_')}" for p in (REC, DSO)
+        for svc in ("identity_registry", "connector", "provenance", "edc")
+    }
+    assert found == expected, sorted(found)
+    for o in objects:
+        if o["kind"] == "Deployment":
+            for v in container_env(o).values():
+                if isinstance(v, str) and "postgresql" in v:
+                    assert "/ds_" in v, v
+
+
+def test_a_missing_database_password_fails_naming_the_key(render_pilot):
+    """*Red:* look the password up without a presence check: the chart's own
+    `required` names `secrets.dbPassword`, not the deployment's key."""
+    def secrets_(s):
+        del s["secrets"]["postgres"]["connector_example_dso"]
+    _refused(render_pilot(secrets_=secrets_), "secrets.postgres.connector_example_dso")
+
+
+# ── The secrets generator follows the profile ─────────────────────────────────
+
+
+def _generate(tmp_path: Path, values: dict, tool: Path | None = None) -> dict:
+    import subprocess
+    import sys
+
+    vf, out = tmp_path / "values.yaml", tmp_path / "secrets.yaml"
+    vf.write_text(yaml.safe_dump(values))
+    result = subprocess.run(
+        ["uv", "run", "-q", "--no-project", "--with", "pyyaml", "--with", "cryptography",
+         "python", str(tool or HELM_DIR / "tools" / "generate_secrets.py"),
+         "--values", str(vf), "--out", str(out)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return yaml.safe_load(out.read_text())
+
+
+def test_the_generator_follows_names_enrolment_and_collectors(tmp_path):
+    """The generated file is what the render policy asks for: passwords under the
+    prefixed database names, a code per participant with enrolment on, a collector
+    secret per collector, nothing for a disabled participant. *Red:* keep the
+    hard-coded names, or skip a switch."""
+    values = {
+        "global": {"postgres": {"databases": {"namePrefix": "ds_"}}},
+        "participants": [
+            {"name": REC, "enabled": True, "role": "both", "enrolment": {"enabled": True},
+             "collector": {"enabled": True, "holders": [DSO]}},
+            {"name": DSO, "enabled": True, "role": "provider"},
+            {"name": "example-off", "enabled": False},
+        ],
+    }
+    doc = _generate(tmp_path, values)
+    pg = doc["secrets"]["postgres"]
+    assert set(pg) == {"ds_identity_registry"} | {
+        f"ds_{svc}_{p.replace('-', '_')}" for p in (REC, DSO)
+        for svc in ("identity_registry", "connector", "provenance", "edc")
+    }
+    parts = doc["secrets"]["participants"]
+    assert set(parts) == {REC, DSO}
+    assert len(parts[REC]["enrolmentCode"]) >= 32
+    assert "enrolmentCode" not in parts[DSO]
+    assert set(doc["realmOnly"]["collectorClients"]) == {REC}
+
+
+# ── Everything on at once ─────────────────────────────────────────────────────
+
+
+def _everything(values: dict) -> None:
+    _enrol(values)
+    _collector(values)
+    _gov_files(values)
+    _seed_files(values)
+    _two_portals(values)
+    _p(values, DSO)["portal"]["host"] = "portal-example-dso.ds.example.org"
+
+
+def test_every_pod_with_every_switch_on_meets_the_restricted_profile(render_pilot):
+    """The enrolment and collector Jobs are admitted by the namespaces' Pod Security
+    level. *Red:* render one of their containers without `ds.containerSecurityContext`."""
+    from test_pod_security import _violations
+
+    objects = render_pilot(values=_everything, secrets_=_codes).ok()
+    assert _violations(objects) == []
+
+
+def test_no_job_pod_joins_a_service(render_pilot):
+    """A Ready Job pod matching a Service's selector would receive its traffic: the
+    anchor fetching a participant's DID document could land on the enrolment Job.
+    *Red:* give the enrolment or collector Job's pods the release's selector labels."""
+    objects = render_pilot(values=_everything, secrets_=_codes).ok()
+    services = [o for o in objects if o["kind"] == "Service"]
+    jobs = [o for o in objects if o["kind"] == "Job"]
+    assert any("-enrol-" in j["metadata"]["name"] for j in jobs)
+    for job in jobs:
+        labels = job["spec"]["template"]["metadata"].get("labels") or {}
+        ns = job["metadata"].get("namespace")
+        for svc in services:
+            selector = svc["spec"].get("selector") or {}
+            if svc["metadata"].get("namespace") != ns or not selector:
+                continue
+            if "-sync" in job["metadata"]["name"]:
+                continue  # the connector's publish hook: seconds long, pre-existing
+            assert not all(labels.get(k) == v for k, v in selector.items()), (
+                job["metadata"]["name"], svc["metadata"]["name"])
+
+
+def test_the_enrolment_pods_are_under_their_own_network_policy(render_pilot):
+    """Not selected by the release's policies, so they get their own: DNS and
+    Postgres, and the participant's also 443 to its anchor. *Red:* drop the policy
+    (the pods would run with no egress restriction at all)."""
+    objects = render_pilot(values=_everything, secrets_=_codes).ok()
+    for release, tls in (("ds-identity-registry", False), (f"ds-identity-registry-{DSO}", True)):
+        pol = find(objects, "NetworkPolicy", f"{release}-enrolment")
+        assert pol["spec"]["podSelector"]["matchLabels"]["app.kubernetes.io/instance"] == f"{release}-enrolment"
+        ports = {p["port"] for rule in pol["spec"]["egress"] for p in rule.get("ports") or []}
+        assert 5432 in ports and 53 in ports
+        assert (443 in ports) is tls
+
+
+# ── The anchor's in-cluster callers (WS-C request: the host's onboarding) ─────
+
+
+def test_the_anchor_admits_the_callers_it_is_given(render_pilot):
+    """`authority.identityRegistry.networkPolicy.ingressFrom` admits exactly the named
+    namespace (and pods) on the registry port, as the connector's does: the host
+    platform's onboarding calls `/owners`, `/memberships`, `/admin`, which are on no
+    Ingress. *Red:* drop the policy or the helmfile line."""
+    def values(v):
+        v["authority"]["identityRegistry"]["networkPolicy"] = {"ingressFrom": [
+            {"namespace": "example-platform", "podLabels": {"app.kubernetes.io/name": "onboarding"}}
+        ]}
+    objects = render_pilot(values=values).ok()
+    pol = find(objects, "NetworkPolicy", "ds-identity-registry-from-callers")
+    peer = pol["spec"]["ingress"][0]["from"][0]
+    assert peer["namespaceSelector"]["matchLabels"] == {"kubernetes.io/metadata.name": "example-platform"}
+    assert peer["podSelector"]["matchLabels"] == {"app.kubernetes.io/name": "onboarding"}
+    assert pol["spec"]["ingress"][0]["ports"] == [{"protocol": "TCP", "port": 30005}]
+    assert not [o for o in objects if o["kind"] == "NetworkPolicy" and o["metadata"]["name"].startswith("ds-identity-registry-example") and o["metadata"]["name"].endswith("-from-callers")]
+
+
+def test_no_anchor_caller_renders_no_policy(pilot):
+    """*Red:* render the policy with an empty list."""
+    assert not [o for o in pilot if o["metadata"]["name"] == "ds-identity-registry-from-callers"]
+
+
+def test_an_anchor_caller_without_a_namespace_fails(render_pilot):
+    """An empty namespaceSelector admits every namespace. *Red:* drop the check."""
+    def values(v):
+        v["authority"]["identityRegistry"]["networkPolicy"] = {"ingressFrom": [{"podLabels": {"a": "b"}}]}
+    _refused(render_pilot(values=values), "networkPolicy.ingressFrom[0] has no namespace")
