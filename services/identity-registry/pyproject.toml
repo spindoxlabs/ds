@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ds-identity-registry"
-version = "0.1.0"
+version = "0.2.0"
 description = "Identity Registry — DID lifecycle, VC issuance, participant registry, StatusList2021"
 requires-python = ">=3.12"
 dependencies = [
