@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.3.0 (2026-10-12)
+
+### Bug Fixes
+
+- **portal**: Relock with npm 10 so npm ci on Node 22 accepts it
+  ([`ad6d81d`](https://github.com/spindoxlabs/ds/commit/ad6d81d7b305763152d58c88c5b56ab43c1e8538))
+
+### Features
+
+- **helm**: Global.networkPolicy.dnsExtraTo admits a node-local DNS cache in every DNS egress rule
+  ([`232eb9c`](https://github.com/spindoxlabs/ds/commit/232eb9ca6242dc5d3bac1ccbe61e100c90c80fc0))
+
+
 ## v0.2.0 (2026-10-11)
 
 ### Bug Fixes
