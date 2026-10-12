@@ -1,10 +1,11 @@
 """The engine tests a pooled connection before it hands it out.
 
-A connection idle in the pool can be dead without the service knowing: on a cluster whose
-kube-proxy runs IPVS (default TCP timeout 900 s), an idle connection to a ClusterIP is
-forgotten, and the next packet is answered with a reset. Without a pre-ping, the first
-request after a quiet quarter of an hour fails with a 500 (seen on a staging deployment,
-the participant registries' DID documents, 2026-10-12).
+A connection idle in the pool can be dead without the service knowing: on a
+cluster whose kube-proxy runs IPVS (default TCP timeout 900 s), an idle
+connection to a ClusterIP is forgotten, and the next packet is answered with a
+reset. Without a pre-ping, the first request after a quiet quarter of an hour
+fails with a 500 (seen on a staging deployment, the participant registries' DID
+documents, 2026-10-12).
 """
 
 from __future__ import annotations
