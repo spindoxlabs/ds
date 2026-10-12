@@ -28,9 +28,13 @@ def get_engine():
     global _engine
     if _engine is None:
         settings = get_settings()
+        # Pre-ping: a pooled connection can be dead without the pool knowing (an IPVS
+        # kube-proxy forgets an idle TCP connection after 900 s), and without the ping the
+        # first request after a quiet spell fails (tests/test_engine_pool.py).
         _engine = create_async_engine(
             settings.database_url,
             echo=settings.debug,
+            pool_pre_ping=True,
         )
     return _engine
 
