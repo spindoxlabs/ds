@@ -1,6 +1,6 @@
 [project]
 name = "dataset-api-fiware"
-version = "0.3.1"
+version = "0.4.0"
 description = "FIWARE/QuantumLeap extension for Dataset API"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v0.4.0 (2026-10-12)
+
+### Code Style
+
+- Wrap the pre-ping tests and comments to the line length
+  ([`c326d31`](https://github.com/spindoxlabs/ds/commit/c326d314f935973d184b5ba27e33ca3fd3b6f056))
+
+### Features
+
+- **helm**: Global.tracing.egressTo admits the trace collector from every default-deny policy; an
+  endpoint without peers or a port fails the render
+  ([`cc2c08a`](https://github.com/spindoxlabs/ds/commit/cc2c08aaa6eb284b2184492848cfbf4b13454ebb))
+
+
 ## v0.3.1 (2026-10-12)
 
 ### Bug Fixes
