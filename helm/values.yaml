@@ -180,6 +180,11 @@ global:
   # ── Posture ─────────────────────────────────────────────────────────────────
   networkPolicy:
     enabled: true # default-deny ingress+egress, explicit allows only
+    # Extra peers for every DNS egress rule, beside the `k8s-app: kube-dns` pods. A
+    # cluster whose pods resolve through NodeLocal DNSCache (a host-network address,
+    # e.g. `{ipBlock: {cidr: 169.254.20.10/32}}`) lists it here: no pod selector
+    # reaches it, and without it nothing in these namespaces resolves.
+    dnsExtraTo: []
   monitoring:
     serviceMonitor: false
     prometheusNamespace: monitoring

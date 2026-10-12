@@ -29,10 +29,7 @@ spec:
   egress:
     # DNS is a prerequisite for every other egress rule below.
     - to:
-        - namespaceSelector: {}
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
+        {{- include "ds.networkPolicy.dnsTo" . | nindent 8 }}
       ports:
         - protocol: UDP
           port: 53
@@ -159,5 +156,27 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .port }}
+{{- end }}
+{{- end -}}
+
+{{/*
+The DNS rule's peers: the `k8s-app: kube-dns` pods, then
+`global.networkPolicy.dnsExtraTo`. A cluster whose pods resolve through a
+node-local cache (NodeLocal DNSCache) lists that host-network address there as
+an ipBlock, since no pod selector reaches it. An empty peer would admit every
+address, so it fails the render.
+
+Args: the chart's root context
+*/}}
+{{- define "ds.networkPolicy.dnsTo" -}}
+- namespaceSelector: {}
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+{{- range $i, $peer := (((.Values.global).networkPolicy).dnsExtraTo | default list) }}
+{{- if not $peer }}
+{{- fail (printf "global.networkPolicy.dnsExtraTo[%d] is empty: an empty peer admits every address on port 53" $i) }}
+{{- end }}
+{{ list $peer | toYaml }}
 {{- end }}
 {{- end -}}

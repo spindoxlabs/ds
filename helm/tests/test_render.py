@@ -863,6 +863,59 @@ def test_the_enrolment_pods_are_under_their_own_network_policy(render_pilot):
         assert (443 in ports) is tls
 
 
+# ── DNS through a node-local cache ────────────────────────────────────────────
+
+
+def _dns_rules(objects):
+    """Every egress rule on port 53, by policy name."""
+    for pol in objects:
+        if pol["kind"] != "NetworkPolicy":
+            continue
+        for rule in pol["spec"].get("egress") or []:
+            if any(p.get("port") == 53 for p in rule.get("ports") or []):
+                yield pol["metadata"]["name"], rule
+
+
+def test_dns_egress_reaches_only_kube_dns_by_default(render_pilot):
+    """Unset, the DNS rule admits the `k8s-app: kube-dns` pods and nothing else.
+    *Red:* default `global.networkPolicy.dnsExtraTo` to anything."""
+    objects = render_pilot(values=_everything, secrets_=_codes).ok()
+    rules = list(_dns_rules(objects))
+    assert rules
+    for name, rule in rules:
+        assert rule["to"] == [{"namespaceSelector": {}, "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}], name
+
+
+def test_dns_egress_admits_the_extra_peers_it_is_given(render_pilot):
+    """A cluster whose pods resolve through NodeLocal DNSCache (a host-network address,
+    which no pod selector reaches) lists it in `global.networkPolicy.dnsExtraTo`, and
+    every DNS rule carries it, the enrolment Jobs' included. *Red:* drop the helper
+    from the default-deny or from the enrolment policy (a pod there cannot resolve,
+    and an OIDC discovery or a Postgres host lookup hangs)."""
+    peer = {"ipBlock": {"cidr": "169.254.20.10/32"}}
+
+    def values(v):
+        _everything(v)
+        v.setdefault("global", {}).setdefault("networkPolicy", {})["dnsExtraTo"] = [peer]
+    objects = render_pilot(values=values, secrets_=_codes).ok()
+    rules = dict(_dns_rules(objects))
+    assert f"ds-identity-registry-{DSO}-enrolment" in rules
+    assert any(n.startswith("ds-oauth2-proxy") for n in rules)
+    for name, rule in rules.items():
+        assert rule["to"][0]["podSelector"] == {"matchLabels": {"k8s-app": "kube-dns"}}, name
+        assert rule["to"][1:] == [peer], name
+
+
+def test_an_empty_dns_peer_fails_the_render(render_pilot):
+    """An empty peer admits every address on port 53: refused, never silently
+    widened. *Red:* drop the check."""
+    def values(v):
+        v.setdefault("global", {}).setdefault("networkPolicy", {})["dnsExtraTo"] = [{}]
+    result = render_pilot(values=values)
+    assert result.returncode != 0
+    assert "global.networkPolicy.dnsExtraTo[0] is empty" in result.stderr
+
+
 # ── The anchor's in-cluster callers (WS-C request: the host's onboarding) ─────
 
 

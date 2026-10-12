@@ -171,7 +171,12 @@ narrowly-scoped allows.
 **Default deny** on ingress *and* egress is rendered for every service when
 `global.networkPolicy.enabled` is true, and always permits:
 
-- DNS to `kube-dns` — without it every other egress rule fails to resolve;
+- DNS to `kube-dns` — without it every other egress rule fails to resolve. A cluster
+  whose pods resolve through NodeLocal DNSCache sends DNS to a host-network address that
+  no pod selector reaches. List it in `global.networkPolicy.dnsExtraTo` (for example
+  `[{ipBlock: {cidr: 169.254.20.10/32}}]`; the pods' `/etc/resolv.conf` names it). The
+  peer is added to every DNS rule, the enrolment Jobs' included, and an empty peer fails
+  the render;
 - PostgreSQL on the configured port, to `0.0.0.0/0` **except** the cloud metadata endpoint
   `169.254.169.254/32`.
 

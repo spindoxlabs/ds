@@ -125,10 +125,7 @@ spec:
     - Egress
   egress:
     - to:
-        - namespaceSelector: {}
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
+        {{- include "ds.networkPolicy.dnsTo" . | nindent 8 }}
       ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
