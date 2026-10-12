@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ds-governance"
-version = "0.3.0"
+version = "0.3.1"
 description = "Shared governance models, ODRL mapper, and resolver for the dataspaces platform"
 requires-python = ">=3.12"
 dependencies = [

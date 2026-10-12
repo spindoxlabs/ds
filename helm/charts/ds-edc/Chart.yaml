@@ -6,7 +6,7 @@ description: |
   data-plane public endpoint. Management and control APIs stay ClusterIP-only.
 type: application
 version: 0.1.0
-appVersion: "0.3.0"
+appVersion: "0.3.1"
 dependencies:
   - name: ds-common
     version: 0.1.0

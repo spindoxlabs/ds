@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v0.3.1 (2026-10-12)
+
+### Bug Fixes
+
+- **db**: The registry, connector and provenance engines pre-ping pooled connections (an IPVS
+  kube-proxy drops idle TCP at 900 s)
+  ([`1d0866c`](https://github.com/spindoxlabs/ds/commit/1d0866c49a5f047fe1e72facb09cfcc3d187a464))
+
+
 ## v0.3.0 (2026-10-12)
 
 ### Bug Fixes
