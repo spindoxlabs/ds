@@ -139,5 +139,8 @@ spec:
         {{- if include "ir.participantEnrols" . }}
         - {protocol: TCP, port: 443}
         {{- end }}
+    {{- with (include "ds.networkPolicy.tracingEgress" .) }}
+    {{- . | nindent 4 }}
+    {{- end }}
 {{- end }}
 {{- end }}

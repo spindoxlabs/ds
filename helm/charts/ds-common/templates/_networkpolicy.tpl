@@ -44,6 +44,9 @@ spec:
       ports:
         - protocol: TCP
           port: {{ ((.Values.global).postgres).port | default 5432 }}
+{{- with (include "ds.networkPolicy.tracingEgress" .) }}
+    {{- . | nindent 4 }}
+{{- end }}
 {{- with .Values.networkPolicy.egress }}
 {{ toYaml . | indent 4 }}
 {{- end }}
@@ -178,5 +181,38 @@ Args: the chart's root context
 {{- fail (printf "global.networkPolicy.dnsExtraTo[%d] is empty: an empty peer admits every address on port 53" $i) }}
 {{- end }}
 {{ list $peer | toYaml }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Egress to the trace collector, when `global.tracing.endpoint` is set: one rule to the
+peers in `global.tracing.egressTo`, on the endpoint's port. Empty when tracing is off.
+
+**Without it, tracing is on and nothing arrives.** Every pod here is default-deny egress,
+the exporter batches and drops rather than blocking a request, so a collector the policy
+does not admit looks exactly like a quiet service. Hence the failures: an endpoint with
+NetworkPolicies on and no peer, an empty peer (it admits every address), and an endpoint
+without an explicit port (the rule would have to guess one).
+*/}}
+{{- define "ds.networkPolicy.tracingEgress" -}}
+{{- $t := (.Values.global).tracing | default dict }}
+{{- if and $t.endpoint ((.Values.global).networkPolicy).enabled }}
+{{- $port := regexFind "[0-9]+$" (regexFind ":[0-9]+$" (urlParse $t.endpoint).host) }}
+{{- if not $port }}
+{{- fail (printf "global.tracing.endpoint %q has no explicit port: the egress rule to the collector needs one (OTLP/HTTP is usually :4318)" $t.endpoint) }}
+{{- end }}
+{{- if not $t.egressTo }}
+{{- fail "global.tracing.endpoint is set and NetworkPolicies are on, but global.tracing.egressTo is empty: every pod's egress is default-deny, so no span would reach the collector. List the collector's peers (e.g. a namespaceSelector and podSelector)" }}
+{{- end }}
+- to:
+{{- range $i, $peer := $t.egressTo }}
+{{- if not $peer }}
+{{- fail (printf "global.tracing.egressTo[%d] is empty: an empty peer admits every address on the collector's port" $i) }}
+{{- end }}
+{{ list $peer | toYaml | indent 2 }}
+{{- end }}
+  ports:
+    - protocol: TCP
+      port: {{ $port }}
 {{- end }}
 {{- end -}}

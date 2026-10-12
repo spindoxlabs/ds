@@ -60,7 +60,13 @@ global:
   # not resolve, which retries on every span and surfaces as the *service's* log
   # noise.
   tracing:
-    endpoint: "" # e.g. http://otel-collector.monitoring:4318
+    endpoint: "" # e.g. http://otel-collector.monitoring:4318 — the port is required
+    # The collector's peers, for the egress rule every default-deny policy gets when
+    # the endpoint is set (NetworkPolicies on): without it the spans are dropped and
+    # nothing says so. Required then; the render fails without it.
+    #   - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+    #     podSelector: {matchLabels: {app.kubernetes.io/name: otel-collector}}
+    egressTo: []
     # Anything else the SDK and the agent both read. Sampling first: the default
     # records every trace, which is a decision worth taking deliberately rather
     # than discovering under load.

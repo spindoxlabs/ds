@@ -179,6 +179,11 @@ narrowly-scoped allows.
   the render;
 - PostgreSQL on the configured port, to `0.0.0.0/0` **except** the cloud metadata endpoint
   `169.254.169.254/32`.
+- the trace collector, only when `global.tracing.endpoint` is set: one rule to the peers in
+  `global.tracing.egressTo` (for example a `namespaceSelector` and `podSelector` naming the
+  collector), on the endpoint's port. The enrolment Jobs get it too. An endpoint with no
+  peers, with no explicit port, or with an empty peer fails the render. Without this rule
+  the exporter drops every span, and that looks the same as a quiet service.
 
 Every broad-CIDR egress rule carries that metadata exclusion: a pod that can reach
 `169.254.169.254` can often mint cloud IAM credentials.

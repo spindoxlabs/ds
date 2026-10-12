@@ -284,6 +284,11 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    Dev runs a Jaeger all-in-one at `http://tracing.dataspaces.localhost`, in the root
    compose, for the reason step 2 learned the hard way: **a target needs something to send
    to, in the same change**, or the only signal is a span that never appears.
+
+   In a cluster the same rule has a second half: **the target has to be reachable**. Every
+   pod is default-deny on egress, so the charts pair `global.tracing.endpoint` with
+   `global.tracing.egressTo`, the collector's peers. An endpoint without them fails the
+   render (`docs/deployment/exposure.md`).
 4. SLIs and SLOs for the four operations that matter: catalogue fetch, negotiation to
    agreement, transfer to first row, consent decision to negotiation resume.
    **The only step still open, and now unblocked for all four.** *Catalogue fetch* is a

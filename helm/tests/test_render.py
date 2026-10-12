@@ -916,6 +916,71 @@ def test_an_empty_dns_peer_fails_the_render(render_pilot):
     assert "global.networkPolicy.dnsExtraTo[0] is empty" in result.stderr
 
 
+# ── Egress to the trace collector ─────────────────────────────────────────────
+
+_COLLECTOR = {
+    "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "example-observability"}},
+    "podSelector": {"matchLabels": {"app.kubernetes.io/name": "example-collector"}},
+}
+
+
+def _tracing(endpoint="http://collector.example-observability.svc:4318", egress_to=(_COLLECTOR,)):
+    def values(v):
+        _everything(v)
+        tracing = v.setdefault("global", {}).setdefault("tracing", {})
+        tracing["endpoint"] = endpoint
+        if egress_to is not None:
+            tracing["egressTo"] = list(egress_to)
+    return values
+
+
+def _collector_rules(objects, port):
+    """Every egress rule on the collector's port, by policy name."""
+    for pol in objects:
+        if pol["kind"] != "NetworkPolicy":
+            continue
+        for rule in pol["spec"].get("egress") or []:
+            if any(p.get("port") == port for p in rule.get("ports") or []):
+                yield pol["metadata"]["name"], rule
+
+
+def test_no_tracing_endpoint_opens_no_collector_egress(render_pilot):
+    """Unset, no policy admits a collector. *Red:* render the rule unconditionally."""
+    objects = render_pilot(values=_everything, secrets_=_codes).ok()
+    assert not list(_collector_rules(objects, 4318))
+
+
+def test_a_tracing_endpoint_admits_the_collector_from_every_default_deny(render_pilot):
+    """Every pod is default-deny egress and the exporter drops rather than blocks, so a
+    collector the policies do not admit reads as a quiet service. With an endpoint, every
+    default-deny policy and the enrolment Jobs' carry one rule to `egressTo` on the
+    endpoint's port. *Red:* drop the helper from either policy."""
+    objects = render_pilot(values=_tracing(), secrets_=_codes).ok()
+    rules = dict(_collector_rules(objects, 4318))
+    deny = {o["metadata"]["name"] for o in objects
+            if o["kind"] == "NetworkPolicy" and o["metadata"]["name"].endswith("-default-deny")}
+    assert deny and deny <= set(rules), deny - set(rules)
+    assert f"ds-identity-registry-{DSO}-enrolment" in rules
+    for name, rule in rules.items():
+        assert rule == {"to": [_COLLECTOR], "ports": [{"protocol": "TCP", "port": 4318}]}, name
+
+
+def test_a_tracing_endpoint_without_peers_fails_the_render(render_pilot):
+    """*Red:* drop the check (tracing on, every span dropped at the policy)."""
+    _refused(render_pilot(values=_tracing(egress_to=None), secrets_=_codes), "global.tracing.egressTo is empty")
+
+
+def test_a_tracing_endpoint_without_a_port_fails_the_render(render_pilot):
+    """*Red:* default the port (a guess that is wrong for gRPC, or a proxy)."""
+    _refused(render_pilot(values=_tracing(endpoint="http://collector.example-observability.svc"), secrets_=_codes),
+             "has no explicit port")
+
+
+def test_an_empty_collector_peer_fails_the_render(render_pilot):
+    """An empty peer admits every address on the port. *Red:* drop the check."""
+    _refused(render_pilot(values=_tracing(egress_to=({},)), secrets_=_codes), "global.tracing.egressTo[0] is empty")
+
+
 # ── The anchor's in-cluster callers (WS-C request: the host's onboarding) ─────
 
 
