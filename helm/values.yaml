@@ -73,6 +73,9 @@ global:
     attributes: {}
     #   OTEL_TRACES_SAMPLER: parentbased_traceidratio
     #   OTEL_TRACES_SAMPLER_ARG: "0.1"
+    # The EDC's agent is configured by services/edc-connector/otel-config.yaml: it
+    # reads OTEL_TRACES_SAMPLER_ARG (always parent-based) and the resource
+    # attributes, and ignores other OTEL_* variables set here.
 
   # ── Images ──────────────────────────────────────────────────────────────────
   # ghcr.io/spindoxlabs/ds-<service>. Assumed public; pullSecrets are optional.

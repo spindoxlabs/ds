@@ -24,9 +24,19 @@ if [ -n "${OTEL_EXPORTER_OTLP_ENDPOINT:-}" ]; then
   # `OTEL_METRICS_EXPORTER` at something that accepts them.
   export OTEL_METRICS_EXPORTER="${OTEL_METRICS_EXPORTER:-none}"
   export OTEL_LOGS_EXPORTER="${OTEL_LOGS_EXPORTER:-none}"
+  # The agent's configuration file turns JDBC spans off and drops the
+  # `/api/check/*` probe spans: together ~99% of an EDC's traces, none of them
+  # about an exchange. The file reads the endpoint, service name, resource
+  # attributes and sampling ratio from their usual variables, and the agent then
+  # ignores every other OTEL_* variable (see the file). OTEL_CONFIG_FILE names
+  # another file; set it empty for variable-only configuration.
+  OTEL_CONFIG_FILE="${OTEL_CONFIG_FILE-/otel-config.yaml}"
+  if [ -n "$OTEL_CONFIG_FILE" ]; then
+    JAVA_OPTS="-Dotel.config.file=${OTEL_CONFIG_FILE} ${JAVA_OPTS:-}"
+  fi
   JAVA_OPTS="-javaagent:/otel-agent.jar ${JAVA_OPTS:-}"
   export JAVA_OPTS
-  echo "EDC: tracing on — exporting to ${OTEL_EXPORTER_OTLP_ENDPOINT} as ${OTEL_SERVICE_NAME:-unnamed}"
+  echo "EDC: tracing on — exporting to ${OTEL_EXPORTER_OTLP_ENDPOINT} as ${OTEL_SERVICE_NAME:-unnamed}${OTEL_CONFIG_FILE:+, configured by ${OTEL_CONFIG_FILE}}"
 else
   echo "EDC: tracing off — set OTEL_EXPORTER_OTLP_ENDPOINT to enable it"
 fi

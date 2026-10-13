@@ -1,0 +1,64 @@
+# OpenTelemetry Java agent configuration for the EDC — loaded by entrypoint.sh
+# (`-Dotel.config.file`) only when OTEL_EXPORTER_OTLP_ENDPOINT is set.
+#
+# **Why a file and not more variables.** Two kinds of span drowned the exchange:
+#
+# - JDBC: the EDC state machines poll Postgres several times a second, so ~99% of
+#   an idle EDC's spans were `SELECT ds_edc_<participant>` — the bulk of the trace
+#   backend's storage, and none of it about an exchange.
+# - The liveness and readiness probes on `/api/check/*`, one server span each.
+#
+# The agent can switch JDBC off with a variable, but it cannot drop server spans by
+# path except through a sampler rule, and sampler rules exist only in this file
+# format (agent 2.21+; the image pins 2.30.0).
+#
+# **With a file, the agent ignores OTEL_* variables** except where they are
+# substituted below as ${VAR}. So the variables the charts and compose files set
+# keep working because each one is referenced here: the endpoint, the service
+# name (the `service` detector reads OTEL_SERVICE_NAME), the resource attributes
+# (`k8s.namespace.name` from the charts) and the sampling ratio. OTEL_TRACES_SAMPLER
+# itself is **not** read: sampling is always parent-based, the root ratio comes
+# from OTEL_TRACES_SAMPLER_ARG (default 1.0, every trace).
+#
+# Metrics and logs have no provider here, so the agent exports neither — the same
+# as the OTEL_METRICS_EXPORTER / OTEL_LOGS_EXPORTER=none the entrypoint sets for
+# the variable-only path.
+file_format: "1.1"
+
+resource:
+  attributes_list: ${OTEL_RESOURCE_ATTRIBUTES:-}
+  detection/development:
+    detectors:
+      - service:
+
+propagator:
+  composite:
+    - tracecontext:
+    - baggage:
+
+tracer_provider:
+  processors:
+    - batch:
+        exporter:
+          otlp_http:
+            endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces
+  sampler:
+    rule_based_routing:
+      # Applies to server spans only: a probe has no parent, and dropping its
+      # root drops the whole (single-span) trace.
+      span_kind: SERVER
+      rules:
+        - action: DROP
+          attribute: url.path
+          pattern: /api/check/.*
+      fallback_sampler:
+        parent_based:
+          root:
+            trace_id_ratio_based:
+              ratio: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
+
+distribution:
+  javaagent:
+    instrumentation:
+      disabled:
+        - jdbc

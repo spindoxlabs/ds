@@ -44,6 +44,10 @@ ADD --chown=10001:10001 \
     https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_AGENT_VERSION}/opentelemetry-javaagent.jar \
     /otel-agent.jar
 RUN chmod 0444 /otel-agent.jar
+# What the agent records (JDBC off, probe spans dropped); entrypoint.sh loads it.
+# Its `file_format` follows the agent version: re-check it on an agent bump.
+COPY services/edc-connector/otel-config.yaml /otel-config.yaml
+RUN chmod 0444 /otel-config.yaml
 
 COPY services/edc-connector/entrypoint.sh /entrypoint.sh
 RUN chmod 0555 /entrypoint.sh
