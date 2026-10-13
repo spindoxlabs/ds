@@ -159,14 +159,27 @@ every span and reports the failure as the *service's* log noise.
 `global.tracing.attributes` is the escape hatch for everything else the SDK and
 the agent both read — sampling above all, since the default records every trace
 and a busy dataspace is not the place to discover that.
+
+**Every span says which namespace sent it.** `service.name` is the service's
+(`ds-connector`), the same in every participant, so without this a cluster
+running three participants shows one connector. `$(POD_NAMESPACE)` is expanded
+by the kubelet from the variable defined above, and both the SDK and the agent
+read `OTEL_RESOURCE_ATTRIBUTES`; one given in `attributes` is appended (its
+keys win), not rendered twice.
 */}}
-{{- with ((.Values.global).tracing).endpoint }}
+{{- $tracing := (.Values.global).tracing | default dict }}
+{{- $attrs := $tracing.attributes | default dict }}
+{{- with $tracing.endpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}
+- name: OTEL_RESOURCE_ATTRIBUTES
+  value: {{ compact (list "k8s.namespace.name=$(POD_NAMESPACE)" (get $attrs "OTEL_RESOURCE_ATTRIBUTES" | toString)) | join "," | quote }}
 {{- end }}
-{{- range $name, $value := ((.Values.global).tracing).attributes }}
+{{- range $name, $value := $attrs }}
+{{- if not (and $tracing.endpoint (eq $name "OTEL_RESOURCE_ATTRIBUTES")) }}
 - name: {{ $name }}
   value: {{ $value | quote }}
+{{- end }}
 {{- end }}
 {{- end -}}
 

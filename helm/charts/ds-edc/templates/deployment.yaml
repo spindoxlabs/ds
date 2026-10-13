@@ -33,9 +33,22 @@ spec:
         - name: edc
           image: {{ include "ds.image" . }}
           imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
-          command: ["sh", "-c", "java $JAVA_OPTS -Dedc.fs.config=/config/edc.properties -jar /connector.jar"]
+          # `args`, not `command`: `command` replaces the image's ENTRYPOINT, and
+          # `entrypoint.sh` is what attaches the OpenTelemetry agent when
+          # `global.tracing.endpoint` is set. With `command` the EDC ran with the
+          # endpoint in its environment and no agent — tracing on everywhere but
+          # the DSP hop, the one part no Python span covers.
+          args: ["sh", "-c", "java $JAVA_OPTS -Dedc.fs.config=/config/edc.properties -jar /connector.jar"]
           env:
             {{- include "ds.env.common" . | nindent 12 }}
+            {{- $tracing := (.Values.global).tracing | default dict }}
+            {{- if and $tracing.endpoint (not (hasKey ($tracing.attributes | default dict) "OTEL_SERVICE_NAME")) }}
+            # The image deliberately sets no name (one image, every participant);
+            # unnamed, every EDC reports as `unknown_service:java` and a DSP hop
+            # reads as a service calling itself.
+            - name: OTEL_SERVICE_NAME
+              value: {{ include "ds.fullname" . | quote }}
+            {{- end }}
             # EDC reads the environment as config, mapping ENVIRONMENT_NOTATION
             # to dot.notation. These names ARE the settings — the ConfigMap
             # cannot carry them, because EDC does not interpolate ${...} in a

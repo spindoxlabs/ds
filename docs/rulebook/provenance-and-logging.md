@@ -263,7 +263,8 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    | Protocol | OTLP over HTTP (`/v1/traces`) |
    | Server spans | named by **route template**, `/health` and `/metrics` excluded |
    | Client spans | every outbound `httpx` call, in all four Python services |
-   | EDC spans | the Java agent's, including the DSP hop, named per participant via `OTEL_SERVICE_NAME` |
+   | EDC spans | the Java agent's, including the DSP hop, named per participant via `OTEL_SERVICE_NAME` (in Helm, the release name) |
+| Participant | `k8s.namespace.name` on every span's resource, in Helm |
    | Correlation | `ds.dsp.agreement_id` on every span in scope |
    | Not covered | database spans. Deferred rather than half-installed: the instrumentation hooks engine *creation*, and `connector.db.engine` builds its engine at import, before any app factory runs — installing it yields a working import, no spans, and nothing saying so |
 
@@ -289,6 +290,15 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    pod is default-deny on egress, so the charts pair `global.tracing.endpoint` with
    `global.tracing.egressTo`, the collector's peers. An endpoint without them fails the
    render (`docs/deployment/exposure.md`).
+
+   **And the agent has to be on.** Measured on a staging cluster with v0.4.0: the Python
+   services' spans arrived, the EDCs' never did. The ds-edc chart set the container's
+   `command`, which in Kubernetes replaces the image's ENTRYPOINT, so `entrypoint.sh`
+   never ran and the EDC started with the endpoint set and no agent. The chart now passes
+   `args`, and names each EDC by its release (`OTEL_SERVICE_NAME`) as compose does by
+   participant. Every exporter also carries `k8s.namespace.name` in
+   `OTEL_RESOURCE_ATTRIBUTES`: the Python services' `service.name` is the same in every
+   participant, so without it one cluster's three connectors read as one.
 4. SLIs and SLOs for the four operations that matter: catalogue fetch, negotiation to
    agreement, transfer to first row, consent decision to negotiation resume.
    **The only step still open, and now unblocked for all four.** *Catalogue fetch* is a

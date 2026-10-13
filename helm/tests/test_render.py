@@ -981,6 +981,81 @@ def test_an_empty_collector_peer_fails_the_render(render_pilot):
     _refused(render_pilot(values=_tracing(egress_to=({},)), secrets_=_codes), "global.tracing.egressTo[0] is empty")
 
 
+def _exporters(objects):
+    """(object name, container name, env list) for every container exporting spans."""
+    for obj in objects:
+        spec = ((obj.get("spec") or {}).get("template") or {}).get("spec") or {}
+        for c in (spec.get("initContainers") or []) + (spec.get("containers") or []):
+            env = c.get("env") or []
+            if any(e["name"] == "OTEL_EXPORTER_OTLP_ENDPOINT" for e in env):
+                yield obj["metadata"]["name"], c, env
+
+
+def _edc_containers(objects):
+    return [c for name, c, _ in _exporters(objects) if c["name"] == "edc"]
+
+
+def test_every_exporter_says_which_namespace_sent_its_spans(render_pilot):
+    """`service.name` is the same in every participant; the namespace is what tells
+    them apart. The kubelet expands `$(POD_NAMESPACE)` only from a variable defined
+    *earlier* in the list, so the order is asserted too. *Red:* drop the attribute
+    from `ds.env.common`, or move it above `POD_NAMESPACE`."""
+    exporters = list(_exporters(render_pilot(values=_tracing(), secrets_=_codes).ok()))
+    assert exporters
+    for name, c, env in exporters:
+        names = [e["name"] for e in env]
+        assert len(names) == len(set(names)), (name, c["name"])
+        attrs = next(e for e in env if e["name"] == "OTEL_RESOURCE_ATTRIBUTES")
+        assert attrs["value"] == "k8s.namespace.name=$(POD_NAMESPACE)", (name, c["name"])
+        assert names.index("POD_NAMESPACE") < names.index("OTEL_RESOURCE_ATTRIBUTES"), (name, c["name"])
+
+
+def test_resource_attributes_given_are_appended_not_rendered_twice(render_pilot):
+    """A deployment's own `OTEL_RESOURCE_ATTRIBUTES` joins the namespace (later keys
+    win in OpenTelemetry's parser). Two entries of one name would leave the
+    kubelet's choice as the deployment's. *Red:* render `attributes` unfiltered."""
+    def values(v):
+        _tracing()(v)
+        v["global"]["tracing"]["attributes"] = {"OTEL_RESOURCE_ATTRIBUTES": "deployment.environment=staging"}
+    for name, c, env in _exporters(render_pilot(values=values, secrets_=_codes).ok()):
+        attrs = [e["value"] for e in env if e["name"] == "OTEL_RESOURCE_ATTRIBUTES"]
+        assert attrs == ["k8s.namespace.name=$(POD_NAMESPACE),deployment.environment=staging"], (name, c["name"])
+
+
+def test_no_tracing_endpoint_sets_no_resource_attributes(render_pilot):
+    """*Red:* render the attribute outside the endpoint's `with`."""
+    for obj in render_pilot(values=_everything, secrets_=_codes).ok():
+        assert "OTEL_RESOURCE_ATTRIBUTES" not in _container_env(obj), obj["metadata"]["name"]
+
+
+def test_the_edc_runs_through_the_image_entrypoint(render_pilot):
+    """`entrypoint.sh` attaches the OpenTelemetry agent; a `command` replaces it, and
+    the EDC then runs with the endpoint set and no agent — measured on a cluster.
+    *Red:* `command:` back on the edc container."""
+    edcs = _edc_containers(render_pilot(values=_tracing(), secrets_=_codes).ok())
+    assert edcs
+    for c in edcs:
+        assert "command" not in c
+        assert c["args"][-1].startswith("java $JAVA_OPTS ")
+
+
+def test_every_edc_is_named_by_its_release(render_pilot):
+    """The image sets no service name; unnamed, every EDC reports as
+    `unknown_service:java`. A name in `attributes` is the deployment's. *Red:* drop
+    `OTEL_SERVICE_NAME` from the ds-edc chart."""
+    objects = render_pilot(values=_tracing(), secrets_=_codes).ok()
+    names = {n: next(e["value"] for e in env if e["name"] == "OTEL_SERVICE_NAME")
+             for n, c, env in _exporters(objects) if c["name"] == "edc"}
+    assert names and all(v == n for n, v in names.items()), names
+
+    def named(v):
+        _tracing()(v)
+        v["global"]["tracing"]["attributes"] = {"OTEL_SERVICE_NAME": "edc"}
+    for n, c, env in _exporters(render_pilot(values=named, secrets_=_codes).ok()):
+        if c["name"] == "edc":
+            assert [e["value"] for e in env if e["name"] == "OTEL_SERVICE_NAME"] == ["edc"], n
+
+
 # ── The anchor's in-cluster callers (WS-C request: the host's onboarding) ─────
 
 
