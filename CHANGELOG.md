@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.1 (2026-10-13)
+
+### Bug Fixes
+
+- Add tracing on java services
+  ([`aefc98c`](https://github.com/spindoxlabs/ds/commit/aefc98c01a3036372fd5f950c8b971e5664180e4))
+
+
 ## v0.4.0 (2026-10-12)
 
 ### Code Style
