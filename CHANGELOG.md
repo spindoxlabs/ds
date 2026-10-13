@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.2 (2026-10-13)
+
+### Bug Fixes
+
+- Lower jaeger verbose reporting
+  ([`9371ab3`](https://github.com/spindoxlabs/ds/commit/9371ab3228d8b8e9f60580724294199585688481))
+
+
 ## v0.4.1 (2026-10-13)
 
 ### Bug Fixes
