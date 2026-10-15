@@ -67,10 +67,12 @@ helmfiles:
 # 1. Prerequisites — CNPG roles, Keycloak realm clients, cert-manager, ingress.
 #    See docs/deployment/prerequisites.md
 # 2. Write your values (helm/values.example.yaml shows a participant entry) and
-#    your secrets (helm/secrets.example.yaml lists every key); encrypt with sops.
+#    your secrets (helm/secrets.example.yaml lists every key), encrypted from the
+#    start and edited with `sops edit` (docs/deployment/secrets.md).
 # 3. Preflight the decrypted secrets — never prints a value:
-sops -d overlay/staging/secrets.sops.yaml > /tmp/secrets.dec.yaml
-task -d ds secrets:check FILE=/tmp/secrets.dec.yaml && rm /tmp/secrets.dec.yaml
+d=$(mktemp -d)
+sops -d overlay/staging/secrets.sops.yaml > "$d/secrets.dec.yaml"
+task -d ds secrets:check FILE="$d/secrets.dec.yaml"; rm -rf "$d"
 # 4. Render, then deploy
 helmfile -e staging template >/dev/null
 helmfile -e staging apply

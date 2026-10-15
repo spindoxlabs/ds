@@ -33,11 +33,13 @@ From the deployment's own repository, whose helmfile takes ds's as its base (see
 
 # 2. Configure, in the deployment repository
 $EDITOR overlay/staging/values.yaml          # baseDomain, namespaces, keycloak, participants
-$EDITOR overlay/staging/secrets.sops.yaml    # every key of ds/helm/secrets.example.yaml (sops)
+sops edit overlay/staging/secrets.sops.yaml  # every key of ds/helm/secrets.example.yaml;
+                                             # creating it: Secrets, "The SOPS path"
 
 # 3. Preflight the decrypted secrets (never prints a value)
-sops -d overlay/staging/secrets.sops.yaml > secrets.dec.yaml
-task -d ds secrets:check FILE=$PWD/secrets.dec.yaml; rm secrets.dec.yaml
+d=$(mktemp -d)
+sops -d overlay/staging/secrets.sops.yaml > "$d/secrets.dec.yaml"
+task -d ds secrets:check FILE="$d/secrets.dec.yaml"; rm -rf "$d"
 
 # 4. Dry run, apply, then the content checks
 helmfile -e staging diff

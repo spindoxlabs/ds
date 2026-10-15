@@ -160,14 +160,11 @@ cd helm
 
 # 2. Configure
 $EDITOR values.yaml                    # baseDomain, postgres, keycloak, participants
-cp secrets.example.yaml secrets.sops.yaml
-$EDITOR secrets.sops.yaml              # fill every CHANGE_ME
-$EDITOR .sops.yaml                     # set your age or KMS recipient
+$EDITOR .sops.yaml                     # set your age or KMS recipient, first
+sops --encrypt --filename-override secrets.sops.yaml secrets.example.yaml > secrets.sops.yaml
+sops edit secrets.sops.yaml            # fill every CHANGE_ME; re-encrypted on save
 
-# 3. Encrypt
-sops --encrypt --in-place secrets.sops.yaml
-
-# 4. Deploy
+# 3. Deploy
 export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
 helmfile -e production diff
 helmfile -e production apply

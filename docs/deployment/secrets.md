@@ -31,14 +31,21 @@ ciphertext cannot be committed here by accident.
 
 ```bash
 # in the deployment repository
-cp ds/helm/secrets.example.yaml overlay/staging/secrets.sops.yaml
-$EDITOR overlay/staging/secrets.sops.yaml   # fill every CHANGE_ME
-$EDITOR .sops.yaml                          # your age or KMS recipient
-sops --encrypt --in-place overlay/staging/secrets.sops.yaml
+$EDITOR .sops.yaml                          # your age or KMS recipient, first
+sops --encrypt --filename-override overlay/staging/secrets.sops.yaml \
+  ds/helm/secrets.example.yaml > overlay/staging/secrets.sops.yaml
+sops edit overlay/staging/secrets.sops.yaml # fill every CHANGE_ME; re-encrypted on save
 ```
 
+The file is encrypted before it holds a real value, and every later change is a
+`sops edit` of it. `--filename-override` makes the creation rule for the target path
+apply to the template.
+
 With `encrypted_regex: ^(secrets)$` keys stay readable and only values are
-encrypted, so diffs remain reviewable.
+encrypted, so diffs remain reviewable. `sops edit` keeps the file's data key, so a
+change re-encrypts only the values that changed: one diff line per changed key,
+plus `sops.lastmodified` and `sops.mac`. Decrypting to a file, editing it and
+encrypting it again uses a fresh data key and rewrites every line.
 
 ```bash
 age-keygen -o ~/.config/sops/age/keys.txt
@@ -46,8 +53,9 @@ export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
 ```
 
 !!! danger "The plaintext form must never be committed"
-    Decrypt only to a gitignored path (`secrets.dec.yaml` is ignored in ds's `helm/`), run
-    the preflight on it, delete it.
+    Edit with `sops edit`, never through a plaintext copy. Decrypt only for the
+    preflight, into a private temporary directory, and delete it (below). In ds's own
+    `helm/`, `secrets.dec.yaml` is gitignored for the same purpose.
 
 ### Generating values
 
@@ -153,8 +161,9 @@ only honest meaning of "send it again" — and it is what makes a leaked bundle 
 
 ```bash
 # in the deployment repository
-sops -d overlay/staging/secrets.sops.yaml > secrets.dec.yaml
-task -d ds secrets:check FILE=$PWD/secrets.dec.yaml; rm secrets.dec.yaml
+d=$(mktemp -d)                              # mode 0700
+sops -d overlay/staging/secrets.sops.yaml > "$d/secrets.dec.yaml"
+task -d ds secrets:check FILE="$d/secrets.dec.yaml"; rm -rf "$d"
 helmfile -e staging template >/dev/null && echo "every required secret is wired"
 ```
 
