@@ -270,6 +270,37 @@ from a CrashLoopBackOff into the diff, which is where `ir.role` already puts its
 {{- end -}}
 
 {{/*
+The `ir-cli org reverify` line the bootstrap runs before `org apply`, or nothing.
+
+`bootstrap.reverify.aliases` names the owners whose legal identity in owners.yaml
+changed after they were verified: `org apply` refuses that change (409), so the
+bootstrap would exit non-zero. Re-verifying them first lands the change in the same
+rollout. A re-verification is a claim by someone, so `verifiedBy` is required, and
+refused here rather than in a CrashLoopBackOff. `orgApply.dryRun` covers it too.
+*/}}
+{{- define "ir.reverifyCommand" -}}
+{{- $cfg := .Values.bootstrap.reverify | default dict -}}
+{{- $aliases := $cfg.aliases | default list -}}
+{{- if $aliases -}}
+{{- if not $cfg.verifiedBy -}}
+{{- fail "ds-identity-registry: bootstrap.reverify.aliases requires .verifiedBy — a re-verification records who made it" -}}
+{{- end -}}
+{{- $flags := list -}}
+{{- range $aliases -}}
+{{- $flags = append $flags (printf "--alias %s" (toString . | quote)) -}}
+{{- end -}}
+{{- $flags = append $flags (printf "--verified-by %s" ($cfg.verifiedBy | quote)) -}}
+{{- with $cfg.evidenceRef -}}
+{{- $flags = append $flags (printf "--evidence-ref %s" (. | quote)) -}}
+{{- end -}}
+{{- if (.Values.bootstrap.orgApply | default dict).dryRun -}}
+{{- $flags = append $flags "--dry-run" -}}
+{{- end -}}
+{{- printf "ir-cli org reverify --file \"$SEED/owners.yaml\" %s" (join " " $flags) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 ds3: the seed and governance ConfigMaps. `bootstrap.seedFiles` / `governanceFiles`
 (key → content, passed by the deployment) are rendered by this chart as
 `<release>-seed` / `<release>-governance`; `seedConfigMap` / `governanceConfigMap`

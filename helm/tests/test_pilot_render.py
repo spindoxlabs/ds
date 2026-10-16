@@ -708,6 +708,42 @@ def test_org_apply_without_verified_by_fails(render_pilot):
     assert "verifiedBy" in r.stderr
 
 
+def test_no_reverification_runs_unless_one_is_asked(pilot):
+    _, init = _bootstrap(pilot)
+    assert "org reverify" not in init["args"][0]
+
+
+def test_the_owners_to_reverify_are_reverified_before_org_apply(render_pilot):
+    def ask(v):
+        v["authority"]["identityRegistry"]["bootstrap"]["reverify"] = {
+            "aliases": ["example-rec", "example-dso"],
+            "verifiedBy": "registrar@example.org",
+            "evidenceRef": "REG-7",
+        }
+
+    _, init = _bootstrap(render_pilot(values=ask).ok())
+    lines = init["args"][0].splitlines()
+    reverify = next(i for i, l in enumerate(lines) if "ir-cli org reverify" in l)
+    apply = next(i for i, l in enumerate(lines) if "ir-cli org apply" in l)
+    assert reverify < apply
+    line = lines[reverify]
+    assert '--file "$SEED/owners.yaml"' in line
+    assert '--alias "example-rec" --alias "example-dso"' in line
+    assert '--verified-by "registrar@example.org"' in line
+    assert '--evidence-ref "REG-7"' in line
+
+
+def test_a_reverification_without_verified_by_fails(render_pilot):
+    def ask(v):
+        v["authority"]["identityRegistry"]["bootstrap"]["reverify"] = {
+            "aliases": ["example-rec"],
+        }
+
+    r = render_pilot(values=ask)
+    assert r.returncode != 0
+    assert "bootstrap.reverify" in r.stderr
+
+
 # ── Rows 14, 16 — portal and edge ──────────────────────────────────────────────
 
 

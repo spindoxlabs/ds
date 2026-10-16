@@ -158,6 +158,9 @@ Treat that as containment, not authentication.
 | `authority.identityRegistry.bootstrap.orgApply.verifiedBy` | `""` | who verified this run's entries. **Required** by the two keys around it |
 | `authority.identityRegistry.bootstrap.orgApply.evidenceRef` | `""` | what that verification rests on, e.g. `env/prod/owners.yaml` |
 | `authority.identityRegistry.bootstrap.orgApply.dryRun` | `false` | report and roll back instead of writing |
+| `authority.identityRegistry.bootstrap.reverify.aliases` | `[]` | owners to re-verify before `org apply` (`ir-cli org reverify`), because their legal identity in the owners file changed after they were verified. For one rollout, then emptied (below) |
+| `authority.identityRegistry.bootstrap.reverify.verifiedBy` | `""` | who made the re-verification. **Required** with `aliases`; refused at render |
+| `authority.identityRegistry.bootstrap.reverify.evidenceRef` | `""` | what it rests on |
 
 Bootstrap is idempotent by design — every command has upsert semantics — so it is safe on every
 pod start. It runs `agreement import` → `owner import` → `org apply` **in that order**, because
@@ -205,6 +208,39 @@ The chain deliberately stops at a **verified owner holding its `did` and `aliase
 the whole of what `GET /owners/resolve` needs. No agreement is accepted, no credential issued
 and no participant promoted: those are legal and topological facts a run-level flag must not
 assert. See [the identity-registry service page](../services/identity-registry.md).
+
+### Changing a verified organisation's legal identity
+
+A verified organisation's legal identity (`legal_name`, registration number and type, country
+codes, parent and sub-organisations) is asserted by the OrganizationCredential it was issued, so
+`org apply` refuses to change it: the bootstrap exits non-zero on a 409. The change is a **new
+verification**, made with `ir-cli org reverify`:
+
+```sh
+ir-cli org reverify --file owners.yaml --alias example-rec \
+  --verified-by registrar@example.org --evidence-ref REG-7 [--dry-run]
+```
+
+It writes the identity the entry declares, records the new verification (who, what, now) and
+revokes the credentials asserting the old values; `org apply` (or the holder's next issuance
+request) then issues a fresh one. An identity that already matches changes nothing. It refuses
+an owner that is not verified and a changed DID, which is a new participant.
+
+To land the change in one rollout, name the owners in `bootstrap.reverify`: the bootstrap
+re-verifies them between `owner import` and `org apply`.
+
+```yaml
+authority:
+  identityRegistry:
+    bootstrap:
+      reverify:
+        aliases: [example-rec]
+        verifiedBy: registrar@example.org
+        evidenceRef: REG-7
+```
+
+Empty it again after that rollout. Left in place, any later change to those owners' identity
+would be re-verified with no operator deciding it.
 
 Two failure modes are made loud rather than silent:
 

@@ -200,6 +200,17 @@ bootstrap:
     # governance file naming an owner that carries no DID fails review rather
     # than deploy.
     dryRun: false
+  # Owners to re-verify before `org apply` (`ir-cli org reverify`): their legal
+  # identity in owners.yaml changed after they were verified, which `org apply`
+  # refuses (409, the issued OrganizationCredential asserts the old values). The
+  # run writes the new identity, records this verification and revokes the old
+  # credentials; `org apply` then issues fresh ones. **For the rollout that lands
+  # the change, then emptied**: left in place, any later change to these owners'
+  # identity would go through with no operator deciding it.
+  reverify:
+    aliases: []
+    verifiedBy: "" # required with aliases; refused at render
+    evidenceRef: ""
 
 # ── Collector pairs (ADR-0026), trust-anchor only ─────────────────────────────
 # `holder ← collector` pairs a Job adds once both are active participants

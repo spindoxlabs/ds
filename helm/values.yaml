@@ -284,6 +284,13 @@ authority:
         verifiedBy: "" # required by governance/evidenceRef; refused at render
         evidenceRef: ""
         dryRun: false
+      # Owners whose legal identity changed after verification, re-verified
+      # before `org apply` (`ir-cli org reverify`). For one rollout, then
+      # emptied. See docs/deployment/configuration.md.
+      reverify:
+        aliases: []
+        verifiedBy: "" # required with aliases; refused at render
+        evidenceRef: ""
 
 # ==============================================================================
 # Participants — one release group per participant

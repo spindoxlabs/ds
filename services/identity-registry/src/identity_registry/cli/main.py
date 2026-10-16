@@ -1949,6 +1949,97 @@ def org_verify(
     _run(_verify())
 
 
+@org_app.command("reverify")
+def org_reverify(
+    file: Path = typer.Option(..., help="owners.yaml declaring the identity to verify"),
+    alias: list[str] = typer.Option(
+        ..., "--alias", help="Owner to re-verify. Repeatable."
+    ),
+    verified_by: str = typer.Option(
+        ..., "--verified-by", help="Who made this verification (operator id)"
+    ),
+    evidence_ref: str = typer.Option(
+        None, "--evidence-ref", help="What this verification rests on"
+    ),
+    dry_run: bool = typer.Option(
+        False, help="Report what would change; roll back instead of committing"
+    ),
+):
+    """Re-verify verified organisations against the legal identity the file declares.
+
+    A verified organisation's legal identity cannot be edited: its
+    OrganizationCredential asserts it, and ``org apply`` refuses the change with a
+    409. This is the way to change it. Per alias, it writes the identity the
+    entry declares (read as ``org apply`` reads it), records this verification
+    (``--verified-by``, ``--evidence-ref``, now), and revokes the
+    OrganizationCredentials that assert the old values. The next ``org apply``, or
+    the holder's next issuance request, issues a fresh one.
+
+    An identity that already matches changes nothing, so a re-run is a no-op.
+    Refused: an owner that is not verified, a changed DID, an alias the file does
+    not declare. Every alias is attempted and all failures are reported, then the
+    command exits non-zero.
+    """
+    from ..services import org_onboarding as ops
+
+    async def _reverify():
+        import yaml
+
+        if not file.exists():
+            typer.echo(f"File not found: {file}", err=True)
+            raise typer.Exit(1)
+        with file.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        entries = data.get("owners") or data.get("organizations") or []
+        by_id: dict[str, dict] = {}
+        for entry in entries:
+            for key in [entry.get("id"), *(entry.get("aliases") or [])]:
+                if key:
+                    by_id.setdefault(key, entry)
+
+        failed = 0
+        changed = 0
+        factory = await _ensure_db()
+        async with factory() as session:
+            for name in alias:
+                entry = by_id.get(name)
+                if entry is None:
+                    typer.echo(f"{name}:\n  ERROR  not declared in {file}", err=True)
+                    failed += 1
+                    continue
+                try:
+                    outcome = await ops.reverify_owner(
+                        session,
+                        entry,
+                        verified_by=verified_by,
+                        evidence_ref=evidence_ref,
+                    )
+                except ops.OrgOnboardingError as exc:
+                    await session.rollback()
+                    typer.echo(f"{name}:\n  ERROR  {exc.message}", err=True)
+                    failed += 1
+                    continue
+                await (session.rollback() if dry_run else session.commit())
+                typer.echo(f"{outcome.alias}:")
+                if not outcome.changed:
+                    typer.echo("  unchanged")
+                    continue
+                changed += 1
+                for field_name, (old, new) in outcome.changes.items():
+                    typer.echo(f"  {field_name:<21} {old!r} → {new!r}")
+                for cred_id in outcome.revoked:
+                    typer.echo(f"  revoked               {cred_id}")
+
+        typer.echo(
+            f"\n{len(alias)} organisation(s), {changed} re-verified, {failed} failed"
+            + (" [dry-run: nothing committed]" if dry_run else "")
+        )
+        if failed:
+            raise typer.Exit(1)
+
+    _run(_reverify())
+
+
 @org_app.command("agreement")
 def org_agreement(
     alias: str = typer.Option(..., help="Owner alias"),

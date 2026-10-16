@@ -690,6 +690,176 @@ async def revoke_owner(db: AsyncSession, owner: Owner) -> None:
     await db.flush()
 
 
+# ── Re-verification ───────────────────────────────────────────────
+#
+# A verified organisation's legal identity is locked (`LEGAL_IDENTITY_FIELDS`):
+# its OrganizationCredential asserts it, so a seed that changes one is refused
+# with a 409 rather than applied behind the credential. The way to change it is
+# a new verification, made by a named verifier, and this is that operation. It
+# writes the declared identity, records the new verification, and revokes the
+# credentials that assert the old values. It issues nothing: `org apply`'s
+# credential step, or the holder's next issuance request, issues a fresh
+# credential from the new identity through the gates every issuance passes.
+#
+# `MembershipCredential` asserts no legal identity, so it is left alone, and the
+# participant stays active.
+
+
+def declared_identity(entry: dict) -> dict:
+    """The legal identity an ``owners.yaml`` entry declares, as ``org apply`` reads it.
+
+    With a ``dataspace:`` block, the block's identity, its ``legal_name`` falling
+    back to the entry's ``name``. Without one, only what the entry itself says: its
+    ``name`` as the legal name, and its ``did``. A key the entry does not declare is
+    absent, so a re-verification leaves that stored value as it is.
+    """
+    alias = entry.get("id") or entry.get("alias") or ""
+    block = entry.get("dataspace") if isinstance(entry.get("dataspace"), dict) else None
+    did = (block or {}).get("did") or entry.get("did")
+    if block is None:
+        identity: dict = {"legal_name": entry.get("name") or alias}
+    else:
+        identity = {
+            "legal_name": block.get("legal_name") or entry.get("name") or alias,
+            "registration_number": block.get("registration_number"),
+            "registration_type": block.get("registration_type"),
+            "hq_country_code": block.get("hq_country_code"),
+            "legal_country_code": block.get("legal_country_code"),
+            "parent_organizations": block.get("parent_organizations"),
+            "sub_organizations": block.get("sub_organizations"),
+        }
+    if did:
+        identity["did"] = did
+    return identity
+
+
+@dataclass(slots=True)
+class ReverifyOutcome:
+    """What one re-verification changed. ``changes`` empty means nothing to do."""
+
+    alias: str
+    #: field → (stored, declared)
+    changes: dict[str, tuple] = field(default_factory=dict)
+    revoked: list[str] = field(default_factory=list)
+
+    @property
+    def changed(self) -> bool:
+        return bool(self.changes)
+
+
+async def reverify_owner(
+    db: AsyncSession,
+    entry: dict,
+    *,
+    verified_by: str,
+    evidence_ref: str | None = None,
+) -> ReverifyOutcome:
+    """Re-verify a verified organisation against the identity *entry* declares.
+
+    Idempotent: an identity that already matches changes nothing, revokes nothing
+    and leaves the verification as it was. Refuses an owner that is not verified,
+    and a changed DID, which is a new participant rather than a corrected name.
+    """
+    alias = entry.get("id") or entry.get("alias") or ""
+    if not alias:
+        raise OrgOnboardingError("entry with no id", status_code=422)
+    if not verified_by:
+        raise OrgOnboardingError(
+            f"{alias}: a re-verification needs who made it (verified_by)",
+            status_code=422,
+        )
+    owner = await resolve_owner(db, alias)
+    if owner is None:
+        raise OrgOnboardingError(
+            f"Owner {alias!r} is not registered; `org apply` onboards it.",
+            status_code=404,
+        )
+    if owner.status != "verified":
+        raise OrgOnboardingError(
+            f"Owner {owner.id!r} is {owner.status!r}; only a verified owner is "
+            "re-verified. "
+            + {
+                "suspended": "Lift the suspension first (`org reinstate`).",
+                "revoked": "Revocation is terminal.",
+            }.get(owner.status, "`org apply` verifies it the first time.")
+        )
+    app = await resolve_application(db, owner.id)
+    if app is None:
+        # An owner that `owner import` seeded has no application yet: start one
+        # from what the owner row holds, so the comparison below has a baseline.
+        app = OrganizationApplication(
+            alias=owner.id,
+            legal_name=owner.name,
+            registration_number=owner.registration_number,
+            registration_type=owner.registration_type,
+            hq_country_code=owner.hq_country_code,
+            legal_country_code=owner.legal_country_code,
+            parent_organizations=owner.parent_organizations,
+            sub_organizations=owner.sub_organizations,
+            did=owner.did,
+            roles=[],
+            status="verified",
+            verified_by=owner.verified_by,
+            evidence_ref=owner.evidence_ref,
+            verified_at=owner.verified_at,
+        )
+        db.add(app)
+        await db.flush()
+
+    outcome = ReverifyOutcome(alias=owner.id)
+    for name, value in declared_identity(entry).items():
+        stored = getattr(app, name)
+        if stored != value:
+            outcome.changes[name] = (stored, value)
+    if "did" in outcome.changes and outcome.changes["did"][0] is not None:
+        raise OrgOnboardingError(
+            f"Owner {owner.id!r} would change DID ({outcome.changes['did'][0]} → "
+            f"{outcome.changes['did'][1]}): a new DID is a new participant, not a "
+            "re-verification."
+        )
+    if not outcome.changed:
+        return outcome
+
+    now = datetime.now(UTC)
+    for name, (_, value) in outcome.changes.items():
+        setattr(app, name, value)
+    app.status = "verified"
+    app.verified_by = verified_by
+    app.verified_at = now
+    app.evidence_ref = evidence_ref
+    app.updated_at = now
+    await db.flush()
+
+    # The credentials that assert the old identity. Revoked, not suspended: they
+    # will never be true again. One this registry did not issue carries no index
+    # and is not ours to revoke (see `suspend_owner`).
+    did = app.did or owner.did
+    if did:
+        held = await db.execute(
+            select(Credential).where(
+                and_(
+                    Credential.subject_did == did,
+                    Credential.credential_type == "OrganizationCredential",
+                    Credential.status.in_(("active", "suspended")),
+                )
+            )
+        )
+        for cred in held.scalars().all():
+            if cred.status_list_index is None:
+                continue
+            await revoke_status_list_index(db, cred.status_list_index)
+            cred.status = "revoked"
+            cred.revoked_at = now
+            outcome.revoked.append(cred.id)
+
+    owner = await upsert_owner_from_application(db, app, verified_by=verified_by)
+    # The promotion keeps an earlier `verified_at` on purpose (a re-applied seed
+    # must not move it). This is a new check, so it records when it was made.
+    owner.verified_at = now
+    await db.flush()
+    return outcome
+
+
 # ── Seeding an organisation end to end (T26) ──────────────────────
 #
 # The five lifecycle calls above are individually idempotent, but reaching a
