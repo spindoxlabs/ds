@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.5.0 (2026-10-16)
+
+### Documentation
+
+- Update sops secrets handling
+  ([`a202a38`](https://github.com/spindoxlabs/ds/commit/a202a38b602975b7fa1f3797cc29a1638a4c7e5f))
+
+### Features
+
+- Add org reverify cli
+  ([`bc6ed93`](https://github.com/spindoxlabs/ds/commit/bc6ed93535be1ccd96e1a98e13f7ed2116071fcb))
+
+
 ## v0.4.2 (2026-10-13)
 
 ### Bug Fixes
