@@ -1,5 +1,5 @@
 # Build context: repo root
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -23,7 +23,7 @@ RUN uv venv /opt/venv && \
 COPY services/dataset-api-mock/pyproject.toml /build/
 RUN uv pip install --python /opt/venv/bin/python --no-sources -r /build/pyproject.toml
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 LABEL org.opencontainers.image.description="mock dataset-api for standalone dataspace tests"
 
 WORKDIR /app
