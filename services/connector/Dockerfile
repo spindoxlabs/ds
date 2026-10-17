@@ -2,7 +2,7 @@
 # Build command: docker build -f services/connector/Dockerfile .
 
 # ── Builder ───────────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -29,7 +29,7 @@ COPY services/connector/pyproject.toml /build/
 RUN uv pip install --python /opt/venv/bin/python --no-sources -r /build/pyproject.toml
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 LABEL org.opencontainers.image.source="https://github.com/spindoxlabs/ds" \
       org.opencontainers.image.description="ds-connector — EDC orchestration and consent service"
 
