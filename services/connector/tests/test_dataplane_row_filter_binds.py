@@ -48,7 +48,7 @@ def _organization_spec(*filters: dict):
     )
 
 
-@pytest.mark.rule("X-5")
+@pytest.mark.rule("X-17")
 def test_the_organization_filter_is_found_whatever_its_position():
     assert _organization_spec(PERSON, ORGANIZATION) == {
         "handler": "organization_match",
@@ -56,7 +56,7 @@ def test_the_organization_filter_is_found_whatever_its_position():
     }
 
 
-@pytest.mark.rule("X-5")
+@pytest.mark.rule("X-17")
 def test_of_several_organization_filters_the_first_is_sent():
     """Filters AND, and a PEP refuses any one it cannot apply: one is enough."""
     wide = {"handler": "member_wide", "binds": "organization"}
@@ -64,7 +64,7 @@ def test_of_several_organization_filters_the_first_is_sent():
     assert _organization_spec(wide, ORGANIZATION)["handler"] == "member_wide"
 
 
-@pytest.mark.rule("X-5")
+@pytest.mark.rule("X-17")
 def test_a_person_filter_is_never_the_organization_filter():
     assert _organization_spec(PERSON) is None
     assert _organization_spec() is None

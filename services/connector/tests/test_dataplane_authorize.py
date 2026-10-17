@@ -401,7 +401,7 @@ async def _authorize_ungated(engine, client, dataset_id: str) -> dict:
     return body
 
 
-@pytest.mark.rule("X-5")
+@pytest.mark.rule("X-17")
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_organization_datasets")
 async def test_an_ungated_dataset_keeps_its_organization_filter(engine, client):
@@ -422,7 +422,7 @@ async def test_an_ungated_dataset_keeps_its_organization_filter(engine, client):
     assert row_filter["subject_dids"] == []
 
 
-@pytest.mark.rule("X-5")
+@pytest.mark.rule("X-17")
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_organization_datasets")
 async def test_a_member_wide_filter_is_carried_too(engine, client):
