@@ -1,5 +1,5 @@
 # Build context: repo root
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -32,7 +32,7 @@ COPY services/federated-catalog/src/ /build/src/
 COPY services/federated-catalog/README.md /build/
 RUN uv pip install --python /opt/venv/bin/python --no-sources --no-deps /build
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 LABEL org.opencontainers.image.description="ds-federated-catalog — DCAT-AP federated catalog crawler"
 
 WORKDIR /app
