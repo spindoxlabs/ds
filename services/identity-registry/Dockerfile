@@ -1,5 +1,5 @@
 # ---- Builder ----
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /build
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
@@ -34,7 +34,7 @@ COPY services/identity-registry/src/ src/
 RUN uv pip install --python /opt/venv/bin/python --no-sources .
 
 # ---- Runtime ----
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 LABEL org.opencontainers.image.description="ds-identity-registry — DID lifecycle, VC issuance, participant registry"
 
 WORKDIR /app
