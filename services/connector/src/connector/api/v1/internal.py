@@ -526,9 +526,41 @@ async def _authorize_dataset(
     )
 
     if not gate:
-        # No data subject behind these rows, so nothing to filter on. The
+        # No data subject behind these rows, so no person to filter on. The
         # agreement gates it and the agreement said yes.
-        return verdict(ALLOW)
+        organization = _organization_filter_spec(rule)
+        if organization is None:
+            return verdict(ALLOW)
+        # **But the rows may still be an organization's.** A filter binding an
+        # organization says which organization's rows these are, and the
+        # agreement does not replace it: answering a bare `ALLOW` here served
+        # every organization's rows to any holder of an agreement. The filter
+        # travels as declared and names nobody — no principals, keys or subject
+        # DIDs — because ds does not yet say which organization the consumer
+        # acts for. A data plane that cannot apply it refuses (the celine
+        # `dataset-api` answers 403 `row_filter_unenforceable`), so such a
+        # dataset serves no rows on this path until the consumer's organization
+        # is carried. Fail-closed on purpose.
+        log.info(
+            "dataplane authorize: %s carries organization filter %s",
+            dataset_id,
+            organization["handler"],
+            extra={
+                "dataset_id": dataset_id,
+                "row_filter_handler": organization["handler"],
+                "row_filter_binds": "organization",
+            },
+        )
+        return verdict(
+            ALLOW,
+            row_filter=DataplaneRowFilter(
+                handler=organization["handler"],
+                args=organization["args"],
+                principals=[],
+                keys=[],
+                subject_dids=[],
+            ),
+        )
 
     if not purposes:
         # The same rule `/internal/consent/check` applies: no stated reason, no
@@ -649,18 +681,15 @@ def _row_filter_spec(rule) -> dict | None:
     """
     for row_filter in getattr(rule, "row_filters", None) or []:
         # The first filter **binding a person** (celine-utils REQ-0010): it is
-        # the one the consenting subjects narrow. An organization filter is the
-        # provider platform's own access control and refuses a delegated request
-        # at the data plane, so sending it would serve no rows.
+        # the one the consenting subjects narrow. An organization filter is not
+        # sent here: the decision has one `row_filter` slot, a consent-gated
+        # dataset's goes to the person filter, and the data plane refuses an
+        # organization filter on a delegated request anyway, so sending it would
+        # serve no rows. An *ungated* dataset's organization filter is sent, on
+        # its own — `_organization_filter_spec`.
         if row_filter_binds(row_filter) != "person":
             continue
-        args = getattr(row_filter, "args", None)
-        if isinstance(args, dict):
-            args_dict = dict(args)
-        elif args is not None:
-            args_dict = args.model_dump() if hasattr(args, "model_dump") else vars(args)
-        else:
-            args_dict = {}
+        args_dict = _declared_args(row_filter)
         handler = getattr(row_filter, "handler", None)
         if handler:
             return {"handler": str(handler), "args": args_dict}
@@ -672,6 +701,33 @@ def _row_filter_spec(rule) -> dict | None:
     if column:
         return {"handler": DIRECT_USER_MATCH, "args": {"column": column}}
     return None
+
+
+def _organization_filter_spec(rule) -> dict | None:
+    """The first row filter binding an **organization** — handler and args.
+
+    Read only for a dataset that is not consent-gated, where no person filter
+    occupies the decision's single `row_filter` slot. The first one, when a file
+    declares several: filters AND, and a data plane that cannot apply one of them
+    refuses the request, so which one is sent does not change the outcome.
+    """
+    for row_filter in getattr(rule, "row_filters", None) or []:
+        if row_filter_binds(row_filter) != "organization":
+            continue
+        handler = getattr(row_filter, "handler", None)
+        if handler:
+            return {"handler": str(handler), "args": _declared_args(row_filter)}
+    return None
+
+
+def _declared_args(row_filter) -> dict:
+    """Governance's `RowFilter.args` as a plain dict, verbatim."""
+    args = getattr(row_filter, "args", None)
+    if isinstance(args, dict):
+        return dict(args)
+    if args is not None:
+        return args.model_dump() if hasattr(args, "model_dump") else vars(args)
+    return {}
 
 
 @router.get("/consent/check")

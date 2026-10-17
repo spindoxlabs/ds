@@ -349,6 +349,94 @@ async def test_open_dataset_needs_no_filter(engine, client):
     assert body["datasets"][0]["row_filter"] is None
 
 
+# ── an organization's rows ───────────────────────────────────────────────────
+
+# Not consent-gated — no person filter, no `consent_required`, not `pii` — and
+# narrowed to an organization's rows. Declared here rather than in the fixture
+# governance, so the catalogue the rest of the suite reads stays as it is.
+ORG_MATCH = "datasets.gold.example_dso_feeders"
+ORG_WIDE = "datasets.gold.example_rec_members"
+ORGANIZATION_RULES = {
+    ORG_MATCH: {
+        "row_filters": [
+            {
+                "handler": "organization_match",
+                "binds": "organization",
+                "args": {"column": "dso_id"},
+            }
+        ]
+    },
+    ORG_WIDE: {"row_filters": [{"handler": "member_wide", "binds": "organization"}]},
+}
+
+
+@pytest.fixture
+def _organization_datasets(monkeypatch):
+    from ds.governance.models import GovernanceRuleV2
+
+    from connector.services import consent_vocabulary as vocab
+
+    real = vocab.resolve_dataset
+
+    def resolve(dataset_id: str):
+        if dataset_id in ORGANIZATION_RULES:
+            return GovernanceRuleV2.model_validate(ORGANIZATION_RULES[dataset_id])
+        return real(dataset_id)
+
+    monkeypatch.setattr(vocab, "resolve_dataset", resolve)
+
+
+async def _authorize_ungated(engine, client, dataset_id: str) -> dict:
+    await _agreement(engine, "agr-org", dataset_id, purposes=("GridMonitoring",))
+    body = (
+        await _authorize(
+            client,
+            agreement_id="agr-org",
+            dataset_ids=[dataset_id],
+            purpose=["GridMonitoring"],
+        )
+    ).json()
+    # The shape every PEP parses with `extra="forbid"`.
+    DataplaneDecision.model_validate(body)
+    return body
+
+
+@pytest.mark.rule("X-5")
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_organization_datasets")
+async def test_an_ungated_dataset_keeps_its_organization_filter(engine, client):
+    """The agreement does not lift an organization filter.
+
+    A bare `ALLOW` here served every organization's rows to any holder of an
+    agreement. The filter travels as declared and names nobody: ds does not yet
+    say which organization the consumer acts for, so a data plane that cannot
+    apply it refuses, and the dataset serves nothing until it does.
+    """
+    body = await _authorize_ungated(engine, client, ORG_MATCH)
+    assert body["decision"] == "allow"
+    row_filter = body["datasets"][0]["row_filter"]
+    assert row_filter["handler"] == "organization_match"
+    assert row_filter["args"] == {"column": "dso_id"}
+    assert row_filter["principals"] == []
+    assert row_filter["keys"] == []
+    assert row_filter["subject_dids"] == []
+
+
+@pytest.mark.rule("X-5")
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_organization_datasets")
+async def test_a_member_wide_filter_is_carried_too(engine, client):
+    body = await _authorize_ungated(engine, client, ORG_WIDE)
+    assert body["decision"] == "allow"
+    row_filter = body["datasets"][0]["row_filter"]
+    assert row_filter["handler"] == "member_wide"
+    # Declared with no args; `RowFilterArgs` reads that as no column.
+    assert row_filter["args"] == {"column": None}
+    assert row_filter["principals"] == []
+    assert row_filter["keys"] == []
+    assert row_filter["subject_dids"] == []
+
+
 # ── the joined query ─────────────────────────────────────────────────────────
 
 

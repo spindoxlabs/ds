@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 134 |
 | …of those, **evidenced by a test that names them** | 134 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1175 |
+| Test nodes declaring a rule | 1180 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -66,7 +66,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `X-2` | Enforced | ✅ evidenced | unit×5 | `libs/ds-edc/tests/test_protocol_pin.py::test_the_version_is_derived_from_the_pin_and_not_written_twice`, `libs/ds-edc/tests/test_protocol_pin.py::test_the_pin_occurs_once_in_the_tree`, `libs/ds-edc/tests/test_protocol_pin.py::test_every_configured_dsp_address_carries_the_pinned_version` +2 more |
 | `X-3` | Enforced | ✅ evidenced | e2e×1 | `smoke` |
 | `X-4` | Enforced | ✅ evidenced | e2e×1, unit×3 | `smoke`, `services/connector/tests/test_auth.py::test_internal_without_token_returns_401`, `services/connector/tests/test_auth.py::test_internal_wrong_scope_returns_403` +1 more |
-| `X-5` | Enforced | ✅ evidenced | e2e×1, unit×6 | `smoke`, `services/connector/tests/test_dataplane_authorize.py::test_consent_becomes_a_row_filter_spec`, `services/connector/tests/test_dataplane_authorize.py::test_open_dataset_needs_no_filter` +4 more |
+| `X-5` | Enforced | ✅ evidenced | e2e×1, unit×11 | `smoke`, `services/connector/tests/test_dataplane_authorize.py::test_consent_becomes_a_row_filter_spec`, `services/connector/tests/test_dataplane_authorize.py::test_open_dataset_needs_no_filter` +9 more |
 | `X-6` | Enforced | ✅ evidenced | e2e×1, unit×3 | `fail-closed`, `services/connector/tests/test_dataplane_authorize.py::test_no_consent_yields_a_refusal_not_an_empty_filter`, `services/connector/tests/test_dataplane_authorize.py::test_unresolvable_subjects_deny` +1 more |
 | `X-6b` | Enforced | ✅ evidenced | e2e×1, unit×1 | `fail-closed`, `services/connector/tests/test_internal_api.py::test_consent_check_no_consent` |
 | `X-6c` | Enforced | ✅ evidenced | e2e×1, unit×5 | `fail-closed`, `services/connector/tests/test_dataplane_authorize.py::test_unknown_agreement_is_refused`, `services/connector/tests/test_dataplane_authorize.py::test_terminated_agreement_is_refused` +3 more |

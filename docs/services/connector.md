@@ -128,7 +128,10 @@ API asks the connector whether rows may flow.
 5. **Check purpose.** The agreed purposes come from the agreement's policy snapshot;
    the requested purpose must be covered by one of them under the profile's `broader`
    hierarchy — consent to a parent purpose covers a narrower request, never the reverse.
-6. **Per dataset:** if governance says no consent is needed, allow with no filter. Otherwise
+6. **Per dataset:** if governance says no consent is needed, allow with no filter — unless
+   the dataset declares a row filter binding an organization: then allow carrying the first
+   such filter as declared, naming nobody, which a data plane that cannot apply it refuses
+   (see [Personal data](../rulebook/personal-data.md#what-a-bare-allow-means)). Otherwise
    collect the subjects whose latest decision authorises this consumer — an offer that
    `requires_offers` another admits them only while that one does too — translate their DIDs
    to the usernames the data plane joins on (`principals`), gather the typed keys registered

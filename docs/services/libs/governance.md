@@ -381,9 +381,11 @@ The type is open and ds does not interpret it; `split_key` and `values_of_type` 
 parser both ends use. Like `principals`, the list is an allow-list of the same consenting
 subjects, and a handler reads the list it knows — `subject_key_match`
 (`args: {column, key_type}`) matches the column against the values of that type and ignores the
-principals. An empty list narrows to nothing. The connector refuses a verdict only when both
-lists are empty. Keys are personal data: they never reach provenance, logs or the evidence
-record.
+principals. An empty list narrows to nothing. The connector refuses a consent-gated verdict
+only when both lists are empty; the one filter it sends with both empty binds an
+organization, on a dataset that is not consent-gated, and names nobody on purpose (see
+[Personal data](../../rulebook/personal-data.md#what-a-bare-allow-means)). Keys are personal
+data: they never reach provenance, logs or the evidence record.
 
 **The celine `dataset-api` implements `subject_key_match`** (2026-09-18), against its own
 specification `docs/dataspace-row-filters.md` in that repository. It is the **reference

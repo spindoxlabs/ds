@@ -487,7 +487,7 @@ wheels = [
 
 [[package]]
 name = "ds-auth"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "../../libs/ds-auth" }
 dependencies = [
     { name = "cryptography" },
@@ -519,7 +519,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "ds-connector"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosmtplib" },
@@ -593,7 +593,7 @@ dev = [{ name = "debugpy", specifier = ">=1.8.21" }]
 
 [[package]]
 name = "ds-edc"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "../../libs/ds-edc" }
 dependencies = [
     { name = "httpx" },
@@ -614,7 +614,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "ds-governance"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "../../libs/governance" }
 dependencies = [
     { name = "celine-utils" },

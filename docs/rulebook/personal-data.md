@@ -59,9 +59,22 @@ honest about a limit in another:
 ### What a bare `ALLOW` means
 
 `POST /internal/dataplane/authorize` answers `ALLOW` with no row filter when
-`consent_gate` finds **none** of the four declarations. That verdict is reached by
-*absence*, not by assertion: nothing in the file said "this data is impersonal" — nothing
-said anything, and the gate found nothing to object with.
+`consent_gate` finds **none** of the four declarations and the dataset declares no row
+filter binding an organization. That verdict is reached by *absence*, not by assertion:
+nothing in the file said "this data is impersonal" — nothing said anything, and the gate
+found nothing to object with.
+
+**An organization filter is not lifted by the agreement.** When an ungated dataset declares
+a row filter binding an organization (`binds: organization` — `organization_match`,
+`member_wide`), the `ALLOW` carries that filter as declared, with no `principals`, `keys` or
+`subject_dids`; of several, the first, since filters AND and a data plane refuses any one it
+cannot apply. Until this was the case the verdict was bare and served every organization's
+rows to any holder of an agreement. ds does not yet say which organization the consumer acts
+for, so the data plane cannot apply the filter and refuses it — the celine `dataset-api`
+answers `403 row_filter_unenforceable`, the mock withholds every row — and such a dataset
+serves **no rows** on the agreement path. That is deliberate and fail-closed; a later step
+will carry the consumer's organization so the filter can be applied. The authorize path logs
+when it carries one, so an empty result can be traced to it.
 
 That is worth knowing when reading a decision, because it means the verdict cannot
 distinguish *a producer who considered this and declared it impersonal* from *a producer who
