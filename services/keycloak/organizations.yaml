@@ -34,8 +34,10 @@ organizations:
     # the client id in dev). ADR-0026.
     collects_consent: true
     domains: []
+    # Its platform role, as `organization.role` in
+    # `services/identity-registry/seed/owners.dev.yaml` says: a community.
     attributes:
-      type: ["dso"]
+      type: ["rec"]
     members:
       # The provider's only authority: a participant seat inside this owner.
       - email: provider@example.test

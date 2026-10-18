@@ -155,7 +155,7 @@ owners:
     aliases: [example]
     organization:
       create: true
-      role: community
+      role: rec
   - id: open-data-provider
     type: schema:Organization
     name: Open Data Provider
@@ -181,7 +181,7 @@ owners:
     def test_the_keycloak_block_survives_the_round_trip(self, tmp_path):
         """What `test_round_trip`'s fixture has always declared and never checked.
 
-        Its YAML carries `organization: {create: true, role: community}`. Under ds's
+        Its YAML carries `organization: {create: true, role: rec}`. Under ds's
         own model that block was dropped on the way in and the test could not have
         noticed — nothing asserted it. See
         `TestOwnerEntry.test_the_keycloak_block_is_read_from_both_spellings`.
@@ -192,14 +192,14 @@ owners:
             "  - id: example-org\n"
             "    organization:\n"
             "      create: true\n"
-            "      role: community\n"
+            "      role: rec\n"
         )
 
         entry = load_owners_yaml(path).by_id("example-org")
         assert entry is not None
         assert entry.organization is not None
         assert entry.organization.create is True
-        assert entry.organization.role == "community"
+        assert entry.organization.role == "rec"
 
     def test_missing_file_raises(self, tmp_path):
         """**A behaviour ds changed on purpose in phase 4.**

@@ -17,9 +17,11 @@ owners:
     # The community collects its members' consent, so promotion also provisions
     # its collector client, `svc-ds-collector-example-org` (ADR-0026).
     collects_consent: true
+    # The platform role, `organizationType` in its OrganizationCredential: a
+    # deployment's own vocabulary, here CELINE's (`rec`, `dso`, `org`).
     organization:
       create: true
-      role: community
+      role: rec
 
   # The consuming organisation. **Added with `DID-05`**, and it closed a gap
   # rather than adding a fixture: `did:web:third-party.dataspaces.localhost` had
@@ -70,9 +72,11 @@ owners:
     status: verified
     verified_by: dev-seed
     evidence_ref: "owners.dev.yaml"
+    # `org`, a generic organisation. Not `processor`: that is a GDPR capacity,
+    # and capacity comes from the agreement it signed (`agreement_capacity`).
     organization:
       create: true
-      role: processor
+      role: org
 
   # A grid operator is one legal entity with more than one controller: metering
   # and operations are unbundled, so a consent naming one does not reach the
@@ -87,7 +91,7 @@ owners:
     evidence_ref: "owners.dev.yaml"
     organization:
       create: true
-      role: operator
+      role: dso
 
   - id: open-data-provider
     type: schema:Organization
