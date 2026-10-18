@@ -16,11 +16,11 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …answered by a **named rule** | 39 |
 | …answered **at page level only** | 120 |
 | …**unassessed** | 531 |
-| Rulebook rules | 167 |
-| …claiming enforcement (`Enforced` / `Partly enforced`) | 135 |
-| …of those, **evidenced by a test that names them** | 135 |
+| Rulebook rules | 169 |
+| …claiming enforcement (`Enforced` / `Partly enforced`) | 137 |
+| …of those, **evidenced by a test that names them** | 137 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1184 |
+| Test nodes declaring a rule | 1192 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -134,15 +134,17 @@ None. Every rule claiming enforcement names at least one test node.
 | `P-18` | Enforced | ✅ evidenced | e2e×1 | `consent-withdrawal` |
 | `P-19` | Declared | · consistent | — | — |
 | `P-20` | Enforced | ✅ evidenced | unit×8 | `services/identity-registry/tests/test_enrolment.py::test_enrolment_registers_the_did_the_key_and_the_endpoints`, `services/identity-registry/tests/test_enrolment.py::test_the_anchor_stores_the_public_key_and_no_private_key`, `services/identity-registry/tests/test_enrolment.py::test_a_valid_code_without_a_matching_signature_enrols_nothing` +5 more |
-| `P-21` | Enforced | ✅ evidenced | unit×9 | `services/identity-registry/tests/test_cip_conformance.py::test_the_acknowledgement_is_a_conformant_credential_status`, `services/identity-registry/tests/test_cip_conformance.py::test_the_delivered_message_is_a_conformant_credential_message`, `services/identity-registry/tests/test_enrolment.py::test_endpoints_come_from_the_did_document_not_the_request` +6 more |
+| `P-21` | Enforced | ✅ evidenced | unit×7 | `services/identity-registry/tests/test_cip_conformance.py::test_the_acknowledgement_is_a_conformant_credential_status`, `services/identity-registry/tests/test_cip_conformance.py::test_the_delivered_message_is_a_conformant_credential_message`, `services/identity-registry/tests/test_enrolment.py::test_endpoints_come_from_the_did_document_not_the_request` +4 more |
 | `P-22` | Enforced | ✅ evidenced | e2e×1, unit×5 | `dcp-trust`, `services/identity-registry/tests/test_cip_conformance.py::test_issuer_metadata_is_conformant`, `services/identity-registry/tests/test_cip_conformance.py::test_the_anchor_publishes_an_issuer_service_entry` +3 more |
 | `P-23` | Enforced | ✅ evidenced | unit×9 | `services/identity-registry/tests/test_conformity.py::test_criteria_are_read_from_a_file`, `services/identity-registry/tests/test_conformity.py::test_a_missing_criteria_file_is_an_error`, `services/identity-registry/tests/test_conformity.py::test_an_empty_criteria_file_is_an_error` +6 more |
 | `P-24` | Enforced | ✅ evidenced | unit×2 | `services/identity-registry/tests/test_conformity.py::test_a_deactivated_participant_is_reported_not_skipped`, `services/identity-registry/tests/test_conformity.py::test_a_participant_no_criterion_covers_is_a_finding` |
-| `P-25` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×12 | `org-onboarding`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_a_presented_credential_names_both_registers`, `services/identity-registry/tests/test_org_onboarding.py::test_full_lifecycle_and_suspend` +11 more |
+| `P-25` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×13 | `org-onboarding`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_a_presented_credential_names_both_registers`, `services/identity-registry/tests/test_org_onboarding.py::test_full_lifecycle_and_suspend` +12 more |
 | `P-26` | Enforced | ✅ evidenced | e2e×1, unit×6 | `org-onboarding`, `services/identity-registry/tests/test_suspension.py::test_a_suspension_bit_is_the_only_bit_that_can_be_cleared`, `services/identity-registry/tests/test_suspension.py::test_clearing_a_bit_cannot_reach_the_revocation_register` +4 more |
 | `P-27` | Enforced | ✅ evidenced | unit×11 | `libs/ds-auth/tests/test_user_credentials.py::test_a_credential_naming_both_registers_is_accepted`, `libs/ds-auth/tests/test_user_credentials.py::test_a_credential_naming_one_register_is_still_accepted`, `libs/ds-auth/tests/test_user_credentials.py::test_a_revoked_credential_is_refused` +8 more |
 | `P-28` | Enforced | ✅ evidenced | unit×8 | `services/identity-registry/tests/test_role_transition.py::test_a_transition_suspends_the_predecessor_and_issues_a_successor`, `services/identity-registry/tests/test_role_transition.py::test_the_suspension_bit_is_set_and_the_revocation_bit_is_not`, `services/identity-registry/tests/test_role_transition.py::test_the_successor_carries_the_new_claim_and_keeps_the_old_ones` +5 more |
 | `P-29` | Enforced | ✅ evidenced | unit×5 | `services/identity-registry/tests/test_did_retirement.py::test_a_person_whose_credentials_are_all_revoked_is_retired`, `services/identity-registry/tests/test_did_retirement.py::test_one_standing_credential_keeps_the_did`, `services/identity-registry/tests/test_did_retirement.py::test_an_unreadable_register_retires_nothing_and_is_reported` +2 more |
+| `P-30` | Enforced | ✅ evidenced | unit×5 | `services/identity-registry/tests/test_org_reissue.py::test_reissue_delivers_the_successor_then_suspends_the_predecessor`, `services/identity-registry/tests/test_org_reissue.py::test_reinstating_after_a_reissue_leaves_the_predecessor_suspended`, `services/identity-registry/tests/test_org_reissue.py::test_a_failed_delivery_suspends_nothing` +2 more |
+| `P-31` | Enforced | ✅ evidenced | unit×4 | `services/identity-registry/tests/test_presentation_status.py::test_a_retired_credential_is_left_out`, `services/identity-registry/tests/test_presentation_status.py::test_an_unreadable_register_leaves_the_credential_out`, `services/identity-registry/tests/test_presentation_status.py::test_the_holder_reads_revocation_and_suspension` +1 more |
 
 ### `personal-data.md`
 

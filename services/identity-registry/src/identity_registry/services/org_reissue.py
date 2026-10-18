@@ -1,4 +1,4 @@
-"""Reissuing an organisation's credential: successor delivered, predecessor revoked.
+"""Reissuing an organisation's credential: successor delivered, predecessor suspended.
 
 `ir-cli org reissue` (decision D16). What an `OrganizationCredential` asserts
 can grow — `organizationId` and `organizationType` were added after
@@ -6,19 +6,29 @@ organisations already held one — and a credential has no in-place update. The
 DCP answer is a **successor**: issued by the anchor, written to the holder's
 own store over the Storage API exactly as an issuance request's credentials are
 (`issuance.deliver_to_custodian`, here with the organisation as its own
-custodian), and only then the predecessor revoked in the status list.
+custodian), and only then the predecessor suspended in the status list
+(`P-30`, decision D25).
+
+**Suspended, not revoked** — as `role_transition.py` retires a superseded
+`DataSubjectCredential` (`P-28`). Revocation says the attestation was withdrawn
+and is terminal; a reissued credential was replaced, not withdrawn, and a
+revocation bit would tell every counterparty something the issuer does not mean.
+A predecessor naming no suspension register can only be revoked, so it is
+refused before anything is written, exactly as a role transition refuses one.
 
 **The order is the availability guarantee.** The holder presents what it holds,
-so revoking first would leave it with nothing valid to present until the
+so suspending first would leave it with nothing valid to present until the
 delivery lands, and a delivery that never lands would leave it with nothing at
 all. So the successor is recorded and committed first (a credential that has
 left this registry must be in its issuance register, as `renewal.py` does), then
-delivered; the predecessor is revoked only after the holder accepted the
-successor. A failed delivery revokes nothing: the organisation keeps the
-credential it has, the successor stays recorded, and the failure is reported. A
-re-run issues another successor and, once one is delivered, revokes every other
-OrganizationCredential this registry issued to that DID — the undelivered ones
-included.
+delivered; the predecessor is suspended only after the holder accepted the
+successor. That is why this is not `P-28`'s one transaction: the custodian holds
+a person's credential, while an organisation's is delivered to a store this
+registry does not control. A failed delivery retires nothing: the organisation
+keeps the credential it has, the successor stays recorded, and the failure is
+reported. A re-run issues another successor and, once one is delivered,
+suspends every other active OrganizationCredential this registry issued to that
+DID — the undelivered ones included.
 
 **Not enrolment.** No enrolment code is issued and nothing is re-enrolled: the
 DID is already registered with its `CredentialService` entry, and that entry is
@@ -51,8 +61,9 @@ from .org_onboarding import (
     issue_organization_credential,
     organization_type,
     resolve_owner,
+    suspension_index,
 )
-from .status_list import revoke_status_list_index
+from .status_list import suspend_status_list_index
 
 log = logging.getLogger(__name__)
 
@@ -71,8 +82,8 @@ class ReissueOutcome:
     #: Where the successor went (or would go).
     endpoint: str | None = None
     delivered: bool = False
-    #: Predecessors revoked — or, on a dry run, that would be.
-    revoked: list[str] = field(default_factory=list)
+    #: Predecessors suspended — or, on a dry run, that would be.
+    suspended: list[str] = field(default_factory=list)
     #: Why delivery failed; the predecessors are then untouched.
     error: str | None = None
 
@@ -81,7 +92,7 @@ async def _issued_org_credentials(db: AsyncSession, did: str) -> list[Credential
     """This registry's live OrganizationCredentials for *did*, newest first.
 
     Live is ``active`` or ``suspended``, as `reverify_owner` retires them. One
-    with no status-list index was not issued here and is not ours to revoke.
+    with no status-list index was not issued here and is not ours to retire.
     """
     rows = (
         (
@@ -117,9 +128,9 @@ async def reissue_owner(
     *,
     dry_run: bool = False,
 ) -> ReissueOutcome:
-    """Issue *alias*'s successor OrganizationCredential, deliver it, revoke the rest.
+    """Issue *alias*'s successor OrganizationCredential, deliver it, suspend the rest.
 
-    Commits on its own — the successor before delivery, the revocations after —
+    Commits on its own — the successor before delivery, the suspensions after —
     because the two writes are separated by a network call to somebody else's
     service. A dry run checks every precondition, writes nothing and delivers
     nothing. Raises `OrgOnboardingError` for a refusal; a failed delivery is
@@ -165,6 +176,22 @@ async def reissue_owner(
             "reissue; `org apply` issues one."
         )
 
+    # **Refused, not worked around** (as `role_transition` refuses, `P-28`): a
+    # predecessor naming no suspension register can only be revoked, and that
+    # would assert the attestation was withdrawn. Checked before anything is
+    # written. Only active ones are retired here; a suspended one already is.
+    retiring = [c for c in held if c.status == "active"]
+    indices: dict[str, int] = {}
+    for cred in retiring:
+        index = suspension_index(cred.credential_json or {})
+        if index is None:
+            raise OrgOnboardingError(
+                f"Credential {cred.id} names no suspension register, so no "
+                "verifier would see it superseded; nothing was issued. It "
+                "predates `P-27`."
+            )
+        indices[cred.id] = index
+
     outcome = ReissueOutcome(
         alias=owner.id,
         did=did,
@@ -174,7 +201,7 @@ async def reissue_owner(
     )
     if dry_run:
         # Nothing has been written, so there is nothing to roll back.
-        outcome.revoked = [c.id for c in held]
+        outcome.suspended = [c.id for c in retiring]
         return outcome
 
     # The successor re-attests what the current credential attests, with the
@@ -182,7 +209,7 @@ async def reissue_owner(
     # legal identity is read from the owner by the issuance itself, and
     # `LEGAL_IDENTITY_FIELDS` keeps that equal to what the predecessor says.
     prior = (current.credential_json or {}).get("credentialSubject") or {}
-    predecessors = [c.id for c in held]
+    predecessors = [c.id for c in retiring]
     successor = await issue_organization_credential(
         db,
         settings,
@@ -218,23 +245,22 @@ async def reissue_owner(
     outcome.delivered = True
 
     # Delivered: the holder has the successor, so the predecessors can go.
-    # Revoked, as `reverify_owner` retires an OrganizationCredential (D16).
-    revoked_at = datetime.now(UTC)
+    # Suspended, not revoked (D25): a superseded credential was replaced, not
+    # withdrawn. `revoked_at` is not stamped — a suspension is not an ending.
     for cred_id in predecessors:
-        cred = await db.get(Credential, cred_id, populate_existing=True)
-        if cred is None or cred.status == "revoked" or cred.status_list_index is None:
+        superseded = await db.get(Credential, cred_id, populate_existing=True)
+        if superseded is None or superseded.status != "active":
             continue
-        await revoke_status_list_index(db, cred.status_list_index)
-        cred.status = "revoked"
-        cred.revoked_at = revoked_at
-        outcome.revoked.append(cred.id)
+        await suspend_status_list_index(db, indices[cred_id])
+        superseded.status = "suspended"
+        outcome.suspended.append(superseded.id)
     await db.commit()
     log.info(
-        "reissue %s: %s delivered to %s, revoked %s",
+        "reissue %s: %s delivered to %s, suspended %s",
         outcome.alias,
         outcome.successor,
         endpoint,
-        ", ".join(outcome.revoked) or "nothing",
+        ", ".join(outcome.suspended) or "nothing",
     )
     return outcome
 

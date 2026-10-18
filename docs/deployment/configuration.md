@@ -254,14 +254,17 @@ ir-cli org reissue --alias example-rec [--alias example-dso] [--dry-run]
 ```
 
 Per alias it issues a successor `OrganizationCredential`, delivers it to the organisation's
-credential store over the DCP Storage API, and then revokes the predecessor. The order keeps
-the organisation able to present a valid credential throughout: **a failed delivery revokes
-nothing**, reports the error and exits non-zero, and a re-run issues another successor and,
-once that one is delivered, revokes every other one. No enrolment code is issued and nothing
-is re-enrolled. It refuses an owner that is not verified, has no DID, has not enrolled,
-publishes no `CredentialService`, or holds no current credential (`org apply` issues the
-first one, and `org reverify` leaves none). `--dry-run` checks all of that and reports what
-would be revoked, issuing and delivering nothing.
+credential store over the DCP Storage API, and then **suspends** the predecessor — suspended,
+not revoked, because it was replaced rather than withdrawn ([rulebook `P-30`](../rulebook/participation.md)).
+The order keeps the organisation able to present a valid credential throughout: **a failed
+delivery suspends nothing**, reports the error and exits non-zero, and a re-run issues another
+successor and, once that one is delivered, suspends every other active one. No enrolment code
+is issued and nothing is re-enrolled. It refuses an owner that is not verified, has no DID,
+has not enrolled, publishes no `CredentialService`, or holds no current credential (`org
+apply` issues the first one, and `org reverify` leaves none), and a current credential that
+names no suspension register. `--dry-run` checks all of that and reports what would be
+suspended, issuing and delivering nothing. A later `org suspend` + `org reinstate` lifts only the newest
+OrganizationCredential, so a reissue's predecessor stays suspended.
 
 Legal-terms acceptance is not part of a reissue: the issuance uses the acceptance on record,
 and a new acceptance is registered separately, by hand (for example after signing in person).

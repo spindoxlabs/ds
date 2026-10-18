@@ -539,6 +539,17 @@ read as valid. Deciding it where the state lives is what stops that shape recurr
    `sub` and the path DID, `exp` must be present and current.
 6. The response is a signed VP holding every active credential for that subject, filtered by
    the types the presentation definition asked for.
+7. When the subject is the participant itself (`IDENTITY_REGISTRY_ROLE=participant`, the
+   path DID is `IDENTITY_REGISTRY_PARTICIPANT_DID`), each of those credentials is checked
+   against the issuer's **revocation and suspension registers** first, and one with either
+   bit set is left out. A register that cannot be read leaves the credential out too, with a
+   warning ([rulebook `P-31`](../rulebook/participation.md), decision D27). The holder's copy stays `active` when the issuer retires it — an
+   organisation reissue suspends the predecessor the holder keeps (`P-30`) — and EDC 0.18.0
+   rejects the **whole** presentation when any credential in it has a set status bit, so one
+   retired copy would fail every negotiation. The DCP presentation protocol says a response
+   *should* hold only valid credentials; IdentityHub's holder filters the same way
+   (`CredentialQueryResolverImpl`). Credentials kept for persons are not read: their status
+   is this registry's own row.
 
 Every verification failure produces the same undifferentiated `401`.
 
@@ -668,7 +679,9 @@ which is the alert. `--dry-run` reports `would_renew` and writes nothing.
 `organizationType` to an organisation issued its credential before they existed. It issues the
 successor, delivers it to the organisation's own credential store over the DCP Storage API (the
 `CredentialService` its registered DID publishes), and **only once the holder accepted it**
-revokes the predecessor; a failed delivery revokes nothing and exits 1. No enrolment code, no
+suspends the predecessor — suspended, not revoked, since it was replaced and not withdrawn
+([rulebook `P-30`](../rulebook/participation.md)); a failed delivery suspends nothing and exits
+1. No enrolment code, no
 re-enrolment and no re-verification: the organisation must already be verified, enrolled and
 hold a current credential (the first one is `org apply`'s). Legal-terms acceptance is not part
 of it and is registered separately, by hand. See

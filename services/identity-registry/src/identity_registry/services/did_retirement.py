@@ -82,8 +82,14 @@ async def anchor_reader(credential: Credential) -> bool | None:
     return credential.status == "revoked"
 
 
-def register_reader(settings: Settings) -> RevocationReader:
-    """On a holder, the issuer's signed register, at the anchor's address."""
+def register_reader(
+    settings: Settings, purpose: str = "revocation"
+) -> RevocationReader:
+    """On a holder, the issuer's signed register, at the anchor's address.
+
+    *purpose* picks the register: the sweep reads ``revocation``; the holder's
+    presentation (`presentation.holder_status_reader`) reads ``suspension`` too.
+    """
     from ds_auth.user_credentials import get_resolver, status_bit_set
 
     resolver = get_resolver(use_https=settings.did_web_use_https)
@@ -92,7 +98,7 @@ def register_reader(settings: Settings) -> RevocationReader:
         return await asyncio.to_thread(
             status_bit_set,
             credential.credential_json or {},
-            "revocation",
+            purpose,
             register_origin=settings.issuer_base_url,
             issuer=settings.trust_anchor_did,
             resolver=resolver,

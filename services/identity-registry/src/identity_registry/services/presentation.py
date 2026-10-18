@@ -7,18 +7,35 @@ access token was **granted**. The intersection is what ships.
 Before this, neither bound applied: the query's scope was not read at all and no
 grant existed, so an empty presentation definition — which is exactly what EDC
 sends — returned every active credential the participant held.
+
+**A retired copy is left out** (decision D27). The holder's copy of its own
+credential stays ``active`` when the issuer suspends or revokes it: DCP has no
+issuer-to-holder message for that (`P-29`), and an organisation reissue
+(`P-30`) suspends the predecessor the holder still keeps. EDC 0.18.0's
+verifier rejects the **whole** presentation when any credential in it has a set
+status bit, so one retired copy would fail every negotiation. When it presents
+the participant's **own** credentials, the holder reads the issuer's registers
+— revocation and suspension — and leaves out a credential with either bit set,
+as the DCP presentation protocol says ("SHOULD only include valid …
+credentials") and as IdentityHub's `CredentialQueryResolverImpl` does. A
+register that cannot be read leaves the credential out too, with a warning
+(fail closed): a smaller presentation can fail a negotiation, never pass one on
+a retired credential. Credentials kept for persons (the custodian's) are not
+read here; their status is this registry's own row.
 """
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import get_settings
+from ..config import Settings, get_settings
 from ..db.models import Credential, Key
 from .crypto import (
     create_jws,
@@ -26,6 +43,13 @@ from .crypto import (
     load_private_key,
     require_private_jwk,
 )
+
+log = logging.getLogger(__name__)
+
+#: Is this credential retired on its issuer's register — revocation **or**
+#: suspension bit set? ``None`` when it names neither register. Raises when a
+#: register cannot be read.
+StatusReader = Callable[[Credential], Awaitable[bool | None]]
 
 #: The scope alias DCP implementations agree on. Upstream's
 #: `EdcScopeToCriterionTransformer` rejects anything else, so accepting a second
@@ -95,6 +119,45 @@ def types_from_presentation_definition(
     return types
 
 
+def holder_status_reader(settings: Settings) -> StatusReader:
+    """Both of the issuer's registers, read as the DID sweep reads one."""
+    from .did_retirement import register_reader
+
+    revoked = register_reader(settings, "revocation")
+    suspended = register_reader(settings, "suspension")
+
+    async def read(credential: Credential) -> bool | None:
+        bits = [await revoked(credential), await suspended(credential)]
+        if any(bit is True for bit in bits):
+            return True
+        if all(bit is None for bit in bits):
+            return None
+        return False
+
+    return read
+
+
+async def _presentable(credential: Credential, read: StatusReader) -> bool:
+    try:
+        retired = await read(credential)
+    except Exception as exc:  # noqa: BLE001 — any failure is "unknown"
+        log.warning(
+            "Credential %s left out of a presentation: its status register "
+            "could not be read (%s)",
+            credential.id,
+            exc,
+        )
+        return False
+    if retired:
+        log.info(
+            "Credential %s left out of a presentation: retired on its issuer's "
+            "register",
+            credential.id,
+        )
+        return False
+    return True
+
+
 async def build_presentation_response(
     db: AsyncSession,
     participant_did: str,
@@ -102,12 +165,15 @@ async def build_presentation_response(
     granted_types: set[str],
     requested_types: set[str] | None = None,
     audience: str | None = None,
+    status_reader: StatusReader | None = None,
 ) -> dict[str, Any]:
     """Build a DCP PresentationResponseMessage containing a VP JWT.
 
     *granted_types* is what the access token allows and is always applied.
     *requested_types* narrows further when the query named specific types; an
     empty request means "everything I am entitled to", which is what EDC sends.
+    With *status_reader*, a credential retired on its issuer's register, or
+    whose register cannot be read, is left out (D27).
     """
     key_result = await db.execute(
         select(Key).where(
@@ -127,11 +193,14 @@ async def build_presentation_response(
             Credential.status == "active",
         )
     )
-    credentials = [
-        row.credential_json
+    rows = [
+        row
         for row in cred_result.scalars().all()
         if selected & set(row.credential_json.get("type", []))
     ]
+    if status_reader is not None:
+        rows = [row for row in rows if await _presentable(row, status_reader)]
+    credentials = [row.credential_json for row in rows]
 
     vc_tokens = [
         vc["proof"]["jws"]

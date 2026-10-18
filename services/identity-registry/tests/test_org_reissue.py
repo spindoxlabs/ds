@@ -5,8 +5,9 @@ An `OrganizationCredential` names the organisation on the platform
 `organization.role` in owners.yaml — not the schema.org `type`, not the
 participant `roles`). Organisations already holding a credential get one that
 says so by a **reissue** (D16): a successor issued, delivered to the holder's
-store over the Storage API, and only then the predecessor revoked. No
-enrolment, no re-verification, no agreement step.
+store over the Storage API, and only then the predecessor suspended — not
+revoked: it was replaced, not withdrawn (P-30, D25). No enrolment, no
+re-verification, no agreement step.
 """
 
 from __future__ import annotations
@@ -21,12 +22,25 @@ from typer.testing import CliRunner
 from identity_registry.db.models import Credential, Owner
 from identity_registry.services import issuance, org_reissue
 from identity_registry.services import org_onboarding as ops
-from identity_registry.services.status_list import get_bit, get_or_create_status_list
+from identity_registry.services.org_onboarding import suspension_index
+from identity_registry.services.status_list import (
+    SUSPENSION_LIST_ID,
+    get_bit,
+    get_or_create_status_list,
+)
 
 
 async def is_revoked(db, index: int) -> bool:
     """The revocation register's bit for *index*, as `/status/1` publishes it."""
     return get_bit((await get_or_create_status_list(db)).bitstring, index)
+
+
+async def is_suspended(db, cred: Credential) -> bool:
+    """The suspension register's bit for *cred*, as `/status/2` publishes it."""
+    index = suspension_index(cred.credential_json)
+    assert index is not None
+    sl = await get_or_create_status_list(db, SUSPENSION_LIST_ID)
+    return get_bit(sl.bitstring, index)
 
 
 async def _org_credentials(db) -> list[Credential]:
@@ -115,9 +129,9 @@ def test_organization_type_reads_only_the_organization_role():
 # ── The reissue ───────────────────────────────────────────────────
 
 
-@pytest.mark.rule("P-21")
+@pytest.mark.rule("P-30")
 @pytest.mark.asyncio
-async def test_reissue_delivers_the_successor_then_revokes_the_predecessor(
+async def test_reissue_delivers_the_successor_then_suspends_the_predecessor(
     db_session, tmp_path, monkeypatch, credential_store
 ):
     settings = await _seed(db_session, tmp_path)
@@ -134,7 +148,7 @@ async def test_reissue_delivers_the_successor_then_revokes_the_predecessor(
 
     events: list[str] = []
     real_deliver = org_reissue.deliver_to_custodian
-    real_revoke = org_reissue.revoke_status_list_index
+    real_suspend = org_reissue.suspend_status_list_index
 
     async def deliver(db, settings, **kwargs):
         # Recorded before it leaves, and the predecessor untouched while it does.
@@ -145,18 +159,18 @@ async def test_reissue_delivers_the_successor_then_revokes_the_predecessor(
         events.append("deliver")
         return await real_deliver(db, settings, **kwargs)
 
-    async def revoke(db, index):
-        events.append("revoke")
-        return await real_revoke(db, index)
+    async def suspend(db, index):
+        events.append("suspend")
+        return await real_suspend(db, index)
 
     monkeypatch.setattr(org_reissue, "deliver_to_custodian", deliver)
-    monkeypatch.setattr(org_reissue, "revoke_status_list_index", revoke)
+    monkeypatch.setattr(org_reissue, "suspend_status_list_index", suspend)
 
     outcome = await org_reissue.reissue_owner(db_session, settings, ALIAS)
 
-    assert events == ["deliver", "revoke"]
+    assert events == ["deliver", "suspend"]
     assert outcome.delivered and outcome.error is None
-    assert outcome.revoked == [old.id]
+    assert outcome.suspended == [old.id]
 
     [message] = credential_store
     [delivered] = message["body"]["credentials"]
@@ -169,34 +183,71 @@ async def test_reissue_delivers_the_successor_then_revokes_the_predecessor(
     assert subject["roles"] == legacy["credentialSubject"]["roles"]
     assert subject["legalName"] == legacy["credentialSubject"]["legalName"]
 
+    # Suspended, not revoked: the suspension bit set, the revocation bit not,
+    # and no end stamped — a suspension is not an ending.
     await db_session.refresh(old)
-    assert old.status == "revoked" and old.revoked_at is not None
-    assert await is_revoked(db_session, old.status_list_index)
+    assert old.status == "suspended" and old.revoked_at is None
+    assert await is_suspended(db_session, old)
+    assert not await is_revoked(db_session, old.status_list_index)
     successor = await db_session.get(Credential, outcome.successor)
     assert successor.status == "active"
+    assert not await is_suspended(db_session, successor)
     assert not await is_revoked(db_session, successor.status_list_index)
 
 
-@pytest.mark.rule("P-21")
+@pytest.mark.rule("P-30", "P-25")
 @pytest.mark.asyncio
-async def test_a_failed_delivery_revokes_nothing(db_session, tmp_path, refusing_store):
+async def test_reinstating_after_a_reissue_leaves_the_predecessor_suspended(
+    db_session, tmp_path, credential_store
+):
+    """`org suspend` then `org reinstate` must not revive what a reissue replaced.
+
+    Suspending the organisation suspends the successor too, so both carry a set
+    bit; reinstating lifts the successor's alone (D36).
+    """
+    settings = await _seed(db_session, tmp_path)
+    old = await _enrolled_with_credential(db_session, settings)
+    outcome = await org_reissue.reissue_owner(db_session, settings, ALIAS)
+    assert outcome.suspended == [old.id]
+
+    owner = await db_session.get(Owner, ALIAS)
+    await ops.suspend_owner(db_session, owner)
+    await db_session.commit()
+    successor = await db_session.get(Credential, outcome.successor)
+    assert successor.status == "suspended"
+
+    await ops.reinstate_owner(db_session, owner)
+    await db_session.commit()
+    await db_session.refresh(old)
+    await db_session.refresh(successor)
+    assert successor.status == "active"
+    assert not await is_suspended(db_session, successor)
+    assert old.status == "suspended"
+    assert await is_suspended(db_session, old)
+
+
+@pytest.mark.rule("P-30")
+@pytest.mark.asyncio
+async def test_a_failed_delivery_suspends_nothing(db_session, tmp_path, refusing_store):
     settings = await _seed(db_session, tmp_path)
     old = await _enrolled_with_credential(db_session, settings)
 
     outcome = await org_reissue.reissue_owner(db_session, settings, ALIAS)
 
     assert not outcome.delivered and "500" in outcome.error
-    assert outcome.revoked == []
+    assert outcome.suspended == []
     await db_session.refresh(old)
     assert old.status == "active"
+    assert not await is_suspended(db_session, old)
     assert not await is_revoked(db_session, old.status_list_index)
     # The successor left this registry (or may have): it stays on the register.
     successor = await db_session.get(Credential, outcome.successor)
     assert successor is not None and successor.status == "active"
 
 
+@pytest.mark.rule("P-30")
 @pytest.mark.asyncio
-async def test_a_rerun_after_a_failed_delivery_revokes_every_other_credential(
+async def test_a_rerun_after_a_failed_delivery_suspends_every_other_credential(
     db_session, tmp_path, monkeypatch
 ):
     settings = await _seed(db_session, tmp_path)
@@ -220,13 +271,43 @@ async def test_a_rerun_after_a_failed_delivery_revokes_every_other_credential(
     status["code"] = 201
     done = await org_reissue.reissue_owner(db_session, settings, ALIAS)
     assert done.delivered
-    assert sorted(done.revoked) == sorted([old.id, failed.successor])
+    assert sorted(done.suspended) == sorted([old.id, failed.successor])
     live = [c.id for c in await _org_credentials(db_session) if c.status == "active"]
     assert live == [done.successor]
+    for cred in await _org_credentials(db_session):
+        if cred.id != done.successor:
+            assert cred.status == "suspended"
+            assert await is_suspended(db_session, cred)
+            assert not await is_revoked(db_session, cred.status_list_index)
+
+
+@pytest.mark.rule("P-30")
+@pytest.mark.asyncio
+async def test_a_predecessor_naming_no_suspension_register_is_refused_before_issuing(
+    db_session, tmp_path, credential_store
+):
+    """Suspending it would set a bit no verifier fetches; revoking it would say
+    the attestation was withdrawn. Neither is done, and nothing is issued."""
+    settings = await _seed(db_session, tmp_path)
+    old = await _enrolled_with_credential(db_session, settings)
+    legacy = dict(old.credential_json)
+    legacy["credentialStatus"] = [
+        e for e in legacy["credentialStatus"] if e.get("statusPurpose") != "suspension"
+    ]
+    old.credential_json = legacy
+    await db_session.commit()
+
+    with pytest.raises(ops.OrgOnboardingError, match="no suspension register"):
+        await org_reissue.reissue_owner(db_session, settings, ALIAS)
+    assert [c.id for c in await _org_credentials(db_session)] == [old.id]
+    assert credential_store == []
+    await db_session.refresh(old)
+    assert old.status == "active"
+    assert not await is_revoked(db_session, old.status_list_index)
 
 
 @pytest.mark.asyncio
-async def test_dry_run_issues_delivers_and_revokes_nothing(
+async def test_dry_run_issues_delivers_and_suspends_nothing(
     db_session, tmp_path, credential_store
 ):
     settings = await _seed(db_session, tmp_path)
@@ -235,7 +316,7 @@ async def test_dry_run_issues_delivers_and_revokes_nothing(
     outcome = await org_reissue.reissue_owner(db_session, settings, ALIAS, dry_run=True)
 
     assert outcome.successor is None and not outcome.delivered
-    assert outcome.revoked == [old.id]
+    assert outcome.suspended == [old.id]
     assert credential_store == []
     [only] = await _org_credentials(db_session)
     assert only.id == old.id and only.status == "active"
@@ -368,13 +449,13 @@ def test_the_command_reissues_and_reports(cli_database, tmp_path, credential_sto
 
     dry = runner.invoke(cli, _reissue_args("--dry-run"))
     assert dry.exit_code == 0, dry.output
-    assert f"would revoke          {old}" in dry.output
+    assert f"would suspend         {old}" in dry.output
     assert "dry-run" in dry.output and credential_store == []
 
     done = runner.invoke(cli, _reissue_args())
     assert done.exit_code == 0, done.output
     assert "organizationType      'rec'" in done.output
-    assert f"revoked               {old}" in done.output
+    assert f"suspended             {old}" in done.output
     assert "1 reissued, 0 failed" in done.output
     assert len(credential_store) == 1
 
@@ -387,7 +468,7 @@ def test_the_command_exits_non_zero_on_a_failed_delivery(
     _prepare(cli_database, tmp_path)
     result = CliRunner().invoke(cli, _reissue_args())
     assert result.exit_code == 1
-    assert "not delivered, nothing revoked" in result.output
+    assert "not delivered, nothing suspended" in result.output
     assert "0 reissued, 1 failed" in result.output
 
 

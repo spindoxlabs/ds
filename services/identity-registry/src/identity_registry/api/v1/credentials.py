@@ -30,6 +30,7 @@ from ...services.did_resolver import DidResolver, normalize_did_web
 from ...services.presentation import (
     build_presentation_response,
     credential_types_for,
+    holder_status_reader,
     types_from_presentation_definition,
 )
 from ...services.token import (
@@ -151,6 +152,7 @@ async def query_presentations(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
     resolver: DidResolver = Depends(get_did_resolver),
+    settings: Settings = Depends(get_settings_dep),
 ):
     """Return a Verifiable Presentation containing matching VCs.
 
@@ -217,6 +219,14 @@ async def query_presentations(
             granted_types=credential_types_for(grant.scopes),
             requested_types=requested_types,
             audience=grant.verifier_did,
+            # A participant's own credentials live in the issuer's registers,
+            # which its copies cannot follow (D27); a person's are this
+            # registry's own rows, already filtered on their status.
+            status_reader=(
+                holder_status_reader(settings)
+                if settings.role == "participant" and settings.is_own_did(did)
+                else None
+            ),
         )
     except LookupError as exc:
         raise HTTPException(404, detail=str(exc)) from exc

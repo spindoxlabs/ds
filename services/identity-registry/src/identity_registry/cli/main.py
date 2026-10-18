@@ -2054,14 +2054,16 @@ def org_reissue(
     Per alias: issues a successor (carrying the claims the current credential
     lacks, such as ``organizationId`` and ``organizationType``), delivers it to
     the organisation's credential store over the DCP Storage API, and only once
-    the holder accepted it revokes the predecessor. A failed delivery revokes
-    nothing. No enrolment code and no re-enrolment: the DID is already
+    the holder accepted it suspends the predecessor (suspended, not revoked: it
+    was replaced, not withdrawn). A failed delivery suspends nothing. No
+    enrolment code and no re-enrolment: the DID is already
     registered. Legal-terms acceptance is not part of this; it is registered
     separately.
 
     Refused: an owner that is not registered, not verified, has no DID, has not
     enrolled or publishes no CredentialService, or holds no current
-    OrganizationCredential (``org apply`` issues the first one). Every alias is
+    OrganizationCredential (``org apply`` issues the first one), or one whose
+    current credential names no suspension register. Every alias is
     attempted and all failures are reported, then the command exits non-zero.
     """
     from ..services import org_onboarding as ops
@@ -2091,21 +2093,21 @@ def org_reissue(
                 )
                 if dry_run:
                     typer.echo(f"  would deliver to      {outcome.endpoint}")
-                    for cred_id in outcome.revoked:
-                        typer.echo(f"  would revoke          {cred_id}")
+                    for cred_id in outcome.suspended:
+                        typer.echo(f"  would suspend         {cred_id}")
                     continue
                 typer.echo(f"  issued                {outcome.successor}")
                 if outcome.error:
                     typer.echo(
-                        f"  ERROR  not delivered, nothing revoked: {outcome.error}",
+                        f"  ERROR  not delivered, nothing suspended: {outcome.error}",
                         err=True,
                     )
                     failed += 1
                     continue
                 reissued += 1
                 typer.echo(f"  delivered             {outcome.endpoint}")
-                for cred_id in outcome.revoked:
-                    typer.echo(f"  revoked               {cred_id}")
+                for cred_id in outcome.suspended:
+                    typer.echo(f"  suspended             {cred_id}")
 
         typer.echo(
             f"\n{len(alias)} organisation(s), {reissued} reissued, {failed} failed"

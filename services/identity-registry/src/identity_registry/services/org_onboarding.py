@@ -581,6 +581,37 @@ async def _participant_for(db: AsyncSession, owner: Owner) -> Participant | None
     return result.scalar_one_or_none()
 
 
+def _superseded_by_reissue(credentials: list[Credential]) -> set[str]:
+    """The OrganizationCredentials a reissue replaced: every one but the newest.
+
+    `org reissue` suspends the predecessors it replaced (`P-30`), and
+    `suspend_owner` suspends the successor too, so after both the register
+    cannot tell them apart and nothing records why each bit was set. Which one
+    is current can still be told: the newest issued here, by expiry then
+    issue. Reinstating lifts that one and leaves the replaced ones suspended,
+    or `org suspend` then `org reinstate` would put a superseded credential
+    back in service.
+    """
+    from .issuance import as_utc  # `issuance` imports this module
+
+    issued_here = [
+        c
+        for c in credentials
+        if c.credential_type == "OrganizationCredential"
+        and c.status_list_index is not None
+    ]
+    if len(issued_here) < 2:
+        return set()
+    # The order `org reissue` itself reads (`_issued_org_credentials`): a
+    # successor outlives what it replaced.
+    never = datetime.min.replace(tzinfo=UTC)
+    newest = max(
+        issued_here,
+        key=lambda c: (as_utc(c.expires_at) or never, as_utc(c.issued_at) or never),
+    )
+    return {c.id for c in issued_here if c.id != newest.id}
+
+
 async def suspend_owner(db: AsyncSession, owner: Owner) -> None:
     """Suspend: set the suspension bits AND deactivate the participant (one tx).
 
@@ -636,8 +667,10 @@ async def reinstate_owner(db: AsyncSession, owner: Owner) -> None:
     """The inverse of `suspend_owner`, and the reason suspension is a state.
 
     Clears the suspension bits on the credentials the organisation already
-    holds. No re-issuance: the credential in its wallet is signed, unexpired and
-    unchanged, and it was never revoked — only held. Re-minting one here would
+    holds — except an OrganizationCredential a reissue replaced, which stays
+    suspended (`_superseded_by_reissue`, D36). No re-issuance: the credential
+    in its wallet is signed, unexpired and unchanged, and it was never revoked
+    — only held. Re-minting one here would
     burn a fresh index and leave the holder carrying a credential the register
     no longer covers.
     """
@@ -662,7 +695,11 @@ async def reinstate_owner(db: AsyncSession, owner: Owner) -> None:
         )
 
     now = datetime.now(UTC)
-    for cred in await _participant_credentials(db, owner, ("suspended",)):
+    live = await _participant_credentials(db, owner, ("active", "suspended"))
+    superseded = _superseded_by_reissue(live)
+    for cred in live:
+        if cred.status != "suspended" or cred.id in superseded:
+            continue
         if cred.status_list_index is None:
             continue  # not ours to lift; see `suspend_owner`
         index = suspension_index(cred.credential_json)
