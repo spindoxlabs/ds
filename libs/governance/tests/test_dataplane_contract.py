@@ -356,3 +356,30 @@ def test_values_of_one_type_ignore_the_others_and_the_malformed():
     from ds.governance.dataplane import values_of_type
 
     assert values_of_type(["pod:A", "meter:B", "junk", "pod:C"], "pod") == {"A", "C"}
+
+
+# ── the consumer's organizations, beside the filter ──────────────────────────
+
+
+def test_the_verdict_carries_the_consumer_organizations_beside_the_filter():
+    """Not inside `row_filter`: that is the person layer; this is the organization's."""
+    decision = _allow(None)
+    decision["datasets"][0]["organizations"] = ["example-dso"]
+    verdict = DataplaneDecision.model_validate(decision).verdict_for(GATED)
+
+    assert verdict.organizations == ["example-dso"]
+    assert verdict.row_filter is None
+
+
+def test_a_pdp_that_sends_no_organizations_still_parses():
+    """The skew test: the PEP accepts the field before the connector emits it."""
+    verdict = DataplaneDecision.model_validate(_allow(None)).verdict_for(GATED)
+
+    assert verdict.organizations is None
+
+
+def test_organizations_must_be_a_list_of_strings():
+    decision = _allow(None)
+    decision["datasets"][0]["organizations"] = "example-dso"
+    with pytest.raises(ValidationError):
+        DataplaneDecision.model_validate(decision)

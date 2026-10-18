@@ -182,10 +182,21 @@ class DatasetVerdict(BaseModel):
     dataset_id: str
     decision: str
     reason: str | None = None
-    #: `None` on an *allow* means no filter applies — every row may leave. It
+    #: `None` on an *allow* means no consenting subject narrows the rows: the
+    #: PEP's own row policy decides the rest (celine `dataset-api` GS-13). It
     #: never means "a filter was intended but could not be built": that case is
     #: a deny, because the two are indistinguishable to the PEP.
     row_filter: DataplaneRowFilter | None = None
+    #: **The consumer's organizations** — the owner ids its presented
+    #: `OrganizationCredential` establishes. Beside `row_filter`, not inside it:
+    #: the row filter is the person layer (the consenting subjects); this is what
+    #: the PEP applies its *organization* layer to. `None` — not established, or
+    #: a connector that predates the field — and `[]` both read as no
+    #: organization: an organization filter then serves no rows.
+    #:
+    #: Optional, and accepted here before the connector emits it, so the data
+    #: plane can be deployed first (PEP before PDP, as for `subject_dids`).
+    organizations: list[str] | None = None
 
     @property
     def allowed(self) -> bool:
