@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from .test_compliance_checks import codes, exposed_dataset, run, write_governance

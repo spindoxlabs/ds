@@ -997,10 +997,14 @@ def select_entries(
     leave the rest of the file — attribution metadata for open data, upstream
     sources with no connector — alone.
 
-    - **Given governance files**, the set is derived: every owner alias named by an
-      exposed dataset, resolved through the registry's existing id/alias swap. An
-      organisation is onboarded because it owns data published here, so the set
-      cannot drift from the governance that produced it.
+    - **Given governance files**, every entry carrying a `dataspace:` block — the
+      schema's own statement that the organisation operates in the dataspace — plus
+      every owner alias named by an exposed dataset, resolved through the registry's
+      existing id/alias swap (attribution owners `GET /owners/resolve` answers for).
+      **Nothing exposed is a correct state**, not an error: a deployment may offer
+      nothing yet (or, as the governance files are read without their overlays, offer
+      only through an overlay), and its participants still have to be verified to
+      enrol. Deriving the set from exposure alone failed exactly that deployment.
     - **Given none**, every entry carrying a `did`. A DID is what
       `GET /owners/resolve` exists to answer with, and an entry without one cannot
       be the recipient of anything.
@@ -1058,7 +1062,9 @@ def select_entries(
             skipped_reason="carries no did",
         )
 
-    selection = Selection(skipped_reason="governance does not name it")
+    selection = Selection(
+        skipped_reason="no dataspace: block, and governance does not name it"
+    )
     known: list[OwnerEntry] = []
     for entry in entries:
         if not entry.get("id"):
@@ -1067,7 +1073,9 @@ def select_entries(
         known.append(OwnerEntry(**entry))
     registry = OwnersRegistry(known)
 
-    chosen: dict[str, dict] = {}
+    chosen: dict[str, dict] = {
+        e["id"]: e for e in entries if e.get("id") and e.get("dataspace")
+    }
     by_id = {e["id"]: e for e in entries if e.get("id")}
     for path in governance_paths:
         try:
@@ -1104,13 +1112,17 @@ def select_entries(
                 continue
             chosen.setdefault(owner.id, by_id[owner.id])
 
+    # Still an error when the run would onboard **nobody at all**: no entry declares
+    # a `dataspace:` block and no exposed dataset names an owner. That is a wrong
+    # owners file or wrong paths, not a deployment offering nothing.
     # `selection.skips` counts here: a run whose every named owner was skipped for
     # a stated reason has already told the operator what happened, and adding
     # "nothing would be onboarded" on top would turn a reported skip back into the
     # run failure #23 removed.
     if not chosen and not selection.errors and not selection.skips:
         selection.errors.append(
-            "no exposed dataset in "
+            "no owners.yaml entry declares a dataspace: block and no exposed dataset "
+            "in "
             + ", ".join(str(p) for p in governance_paths)
             + " names an owner — nothing would be onboarded, which is not the "
             "same answer as 'no organisations needed'"

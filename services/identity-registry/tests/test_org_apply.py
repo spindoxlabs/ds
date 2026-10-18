@@ -1085,8 +1085,64 @@ def test_the_governance_selector_reports_its_own_reason(tmp_path):
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
-    assert selection.skipped_reason == "governance does not name it"
+    assert (
+        selection.skipped_reason
+        == "no dataspace: block, and governance does not name it"
+    )
     assert [e["id"] for e in selection.entries] == ["example-dso"]
+
+
+def _with_dataspace(owner_id: str) -> list[dict]:
+    owners = _owners()
+    for entry in owners:
+        if entry["id"] == owner_id:
+            entry["dataspace"] = {"roles": ["provider"]}
+    return owners
+
+
+@pytest.mark.rule("P-1")
+def test_a_dataspace_organisation_is_onboarded_when_nothing_is_exposed(tmp_path):
+    """A deployment offering nothing yet still has participants to verify, or none of
+    them can enrol. Selecting only owners of exposed datasets failed that deployment
+    (2026-10-18: producers expose nothing; the overlays, read without here, opt in)."""
+    gov = _governance(
+        tmp_path,
+        """
+        sources:
+          datasets.bronze.raw:
+            ownership: [{name: dso}]
+            dataspace: {expose: false}
+    """,
+    )
+
+    selection = ops.select_entries(
+        _with_dataspace("example-rec"), governance_paths=[gov]
+    )
+
+    assert selection.ok, selection.errors
+    assert [e["id"] for e in selection.entries] == ["example-rec"]
+
+
+@pytest.mark.rule("P-1")
+def test_governance_still_adds_the_owners_it_names(tmp_path):
+    """The two selectors are a union: a `dataspace:` organisation, and an attribution
+    owner a published dataset names (registered so `/owners/resolve` answers)."""
+    gov = _governance(
+        tmp_path,
+        """
+        sources:
+          datasets.gold.map:
+            ownership: [{name: openstreetmap}]
+            dataspace: {expose: true}
+    """,
+    )
+
+    selection = ops.select_entries(
+        _with_dataspace("example-dso"), governance_paths=[gov]
+    )
+
+    assert selection.ok, selection.errors
+    assert [e["id"] for e in selection.entries] == ["example-dso", "openstreetmap"]
 
 
 def test_the_did_selector_reports_its_own_reason():
@@ -1107,11 +1163,13 @@ async def test_run_evidence_skip_names_the_selector_not_the_missing_block(
         settings,
         entry,
         None,
-        skip_reason="governance does not name it",
+        skip_reason="no dataspace: block, and governance does not name it",
     )
 
     assert outcome.applied is False
-    assert [s.detail for s in outcome.steps] == ["governance does not name it"]
+    assert [s.detail for s in outcome.steps] == [
+        "no dataspace: block, and governance does not name it"
+    ]
 
 
 @pytest.mark.asyncio

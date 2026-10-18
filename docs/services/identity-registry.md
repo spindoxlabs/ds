@@ -700,7 +700,7 @@ eligible, and two flags decide the rest:
 
 | Flag | What it does |
 |---|---|
-| `--governance` (repeatable) | Selects the owners named by a dataset the file **exposes into the dataspace** (`dataspace.expose`), resolved through the registry's id/alias swap — so `dso` in a pipeline written elsewhere reaches `example-dso` here. The onboarded set is derived from the data actually published rather than listed a second time |
+| `--governance` (repeatable) | Selects every entry carrying a `dataspace:` block, **plus** the owners named by a dataset the file **exposes into the dataspace** (`dataspace.expose`), resolved through the registry's id/alias swap — so `dso` in a pipeline written elsewhere reaches `example-dso` here, and an attribution owner a published dataset names is registered for `GET /owners/resolve`. A name that resolves to no entry is an error. **Nothing exposed is a correct state** (a deployment offering nothing yet; the files are read without their overlays, so an overlay-only offer is invisible here): its `dataspace:` organisations are still onboarded. Only a run that would onboard nobody at all fails |
 | `--verified-by`, `--evidence-ref` | The run's verification evidence, applied to entries that supply none. Never to entries that do: a per-entry block's claim is left alone and reported as `verification unchanged`, because overwriting a DPA reference with a generic run string would downgrade the evidence behind an issued credential |
 
 **A machine-local DID is refused under `DS_ENV=production`.** Both seed entry points —
@@ -717,8 +717,8 @@ production when unset, so forgetting the variable refuses rather than permits; i
 check is silent, because the dev DIDs *are* `.localhost` and that is correct there.
 
 Without `--governance` the selector is *carrying a `did`*. **An entry a selector leaves out
-is reported with that selector's own reason** — `governance does not name it`, or
-`carries no did` — not with whatever else the entry happens to lack. The distinction is not
+is reported with that selector's own reason** — `no dataspace: block, and governance does
+not name it`, or `carries no did` — not with whatever else the entry happens to lack. The distinction is not
 cosmetic: an organisation that carries a DID and is simply not named by any exposed dataset
 is correctly out, and a message about a missing `dataspace:` block sends the reader to the
 wrong file. Without run evidence the block really is the only way in, and the reason reported
