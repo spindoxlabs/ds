@@ -2040,6 +2040,83 @@ def org_reverify(
     _run(_reverify())
 
 
+@org_app.command("reissue")
+def org_reissue(
+    alias: list[str] = typer.Option(
+        ..., "--alias", help="Owner whose credential to reissue. Repeatable."
+    ),
+    dry_run: bool = typer.Option(
+        False, help="Check and report what would happen; issue and deliver nothing"
+    ),
+):
+    """Reissue an organisation's OrganizationCredential to its holder.
+
+    Per alias: issues a successor (carrying the claims the current credential
+    lacks, such as ``organizationId`` and ``organizationType``), delivers it to
+    the organisation's credential store over the DCP Storage API, and only once
+    the holder accepted it revokes the predecessor. A failed delivery revokes
+    nothing. No enrolment code and no re-enrolment: the DID is already
+    registered. Legal-terms acceptance is not part of this; it is registered
+    separately.
+
+    Refused: an owner that is not registered, not verified, has no DID, has not
+    enrolled or publishes no CredentialService, or holds no current
+    OrganizationCredential (``org apply`` issues the first one). Every alias is
+    attempted and all failures are reported, then the command exits non-zero.
+    """
+    from ..services import org_onboarding as ops
+    from ..services.org_reissue import reissue_owner
+
+    async def _reissue():
+        settings = get_settings()
+        failed = 0
+        reissued = 0
+        factory = await _ensure_db()
+        async with factory() as session:
+            for name in alias:
+                try:
+                    outcome = await reissue_owner(
+                        session, settings, name, dry_run=dry_run
+                    )
+                except ops.OrgOnboardingError as exc:
+                    await session.rollback()
+                    typer.echo(f"{name}:\n  ERROR  {exc.message}", err=True)
+                    failed += 1
+                    continue
+                typer.echo(f"{outcome.alias}:")
+                typer.echo(f"  organizationId        {outcome.organization_id!r}")
+                typer.echo(
+                    f"  organizationType      {outcome.organization_type!r}"
+                    + ("" if outcome.organization_type else "  (omitted: no role)")
+                )
+                if dry_run:
+                    typer.echo(f"  would deliver to      {outcome.endpoint}")
+                    for cred_id in outcome.revoked:
+                        typer.echo(f"  would revoke          {cred_id}")
+                    continue
+                typer.echo(f"  issued                {outcome.successor}")
+                if outcome.error:
+                    typer.echo(
+                        f"  ERROR  not delivered, nothing revoked: {outcome.error}",
+                        err=True,
+                    )
+                    failed += 1
+                    continue
+                reissued += 1
+                typer.echo(f"  delivered             {outcome.endpoint}")
+                for cred_id in outcome.revoked:
+                    typer.echo(f"  revoked               {cred_id}")
+
+        typer.echo(
+            f"\n{len(alias)} organisation(s), {reissued} reissued, {failed} failed"
+            + (" [dry-run: nothing issued]" if dry_run else "")
+        )
+        if failed:
+            raise typer.Exit(1)
+
+    _run(_reissue())
+
+
 @org_app.command("agreement")
 def org_agreement(
     alias: str = typer.Option(..., help="Owner alias"),

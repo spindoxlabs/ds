@@ -384,6 +384,8 @@ async def issue_organization_credential(
         parent_organizations=owner.parent_organizations,
         sub_organizations=owner.sub_organizations,
         dsp_address=dsp_address,
+        organization_id=owner.id,
+        organization_type=organization_type(owner),
         credential_id=cred_id,
         ttl_days=ttl,
     )
@@ -409,6 +411,21 @@ async def issue_organization_credential(
     db.add(cred)
     await db.flush()
     return cred
+
+
+def organization_type(owner: Owner) -> str | None:
+    """The organisation's platform role, ``organization.role`` in owners.yaml.
+
+    What ``organizationType`` asserts. Never ``Owner.type`` (a schema.org class
+    such as ``schema:NGO``) and never the participant roles a credential carries
+    as ``roles``. ``None`` when the owner declares no ``organization`` block or no
+    role in it: the claim is then omitted, not guessed.
+    """
+    config = owner.organization_config
+    if not isinstance(config, dict):
+        return None
+    role = config.get("role")
+    return role if isinstance(role, str) and role else None
 
 
 async def _active_org_credential(db: AsyncSession, owner: Owner) -> Credential | None:

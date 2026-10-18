@@ -215,6 +215,8 @@ def build_organization_credential(
     parent_organizations: list[str] | None = None,
     sub_organizations: list[str] | None = None,
     dsp_address: str | None = None,
+    organization_id: str | None = None,
+    organization_type: str | None = None,
     credential_id: str | None = None,
     ttl_days: int = 365,
 ) -> dict[str, Any]:
@@ -250,6 +252,16 @@ def build_organization_credential(
         subject["subOrganization"] = sub_organizations
     if dsp_address:
         subject["dspAddress"] = dsp_address
+    # Which organisation this is on the platform, and what kind (decision O6).
+    # `organizationId` is the owner's id — the key the platform's own rows and
+    # its identity provider's organisation name it by. `organizationType` is the
+    # organisation's **platform** role (`organization.role` in owners.yaml):
+    # not `Owner.type`, a schema.org class, and not `roles` above, the dataspace
+    # participant role. Absent when the owner declares none.
+    if organization_id:
+        subject["organizationId"] = organization_id
+    if organization_type:
+        subject["organizationType"] = organization_type
 
     return {
         "@context": [W3C_CREDENTIALS_V1, JWS_2020_V1, credentials_context_url],

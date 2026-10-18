@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 135 |
 | …of those, **evidenced by a test that names them** | 135 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1180 |
+| Test nodes declaring a rule | 1184 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -107,7 +107,7 @@ None. Every rule claiming enforcement names at least one test node.
 | Rule | Claimed | Verdict | Layers | Evidence |
 |---|---|---|---|---|
 | `P-1` | Enforced | ✅ evidenced | e2e×1, unit×12 | `org-onboarding`, `services/identity-registry/tests/test_agreements_current.py::test_owner_without_an_accepted_agreement_is_not_found`, `services/identity-registry/tests/test_agreements_current.py::test_owner_not_verified_is_not_found` +10 more |
-| `P-2` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×1 | `org-onboarding`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_the_credential_is_signed_by_the_trust_anchor`, `services/identity-registry/tests/test_org_onboarding.py::test_full_lifecycle_and_suspend` |
+| `P-2` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×3 | `org-onboarding`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_the_credential_is_signed_by_the_trust_anchor`, `services/identity-registry/tests/test_org_onboarding.py::test_full_lifecycle_and_suspend` +2 more |
 | `P-3` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×2 | `dcp-trust`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_the_presentation_carries_the_membership_credential`, `services/identity-registry/tests/test_api.py::test_issue_membership_credential` +1 more |
 | `P-4` | Enforced | ✅ evidenced | e2e×1, unit×10 | `org-onboarding`, `services/connector/tests/test_consent_provisioning.py::test_admin_shares_is_idempotent`, `services/identity-registry/tests/test_cip_conformance.py::test_bootstrapping_again_republishes_the_service_entry` +8 more |
 | `P-5` | Declared | · consistent | — | — |
@@ -134,7 +134,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `P-18` | Enforced | ✅ evidenced | e2e×1 | `consent-withdrawal` |
 | `P-19` | Declared | · consistent | — | — |
 | `P-20` | Enforced | ✅ evidenced | unit×8 | `services/identity-registry/tests/test_enrolment.py::test_enrolment_registers_the_did_the_key_and_the_endpoints`, `services/identity-registry/tests/test_enrolment.py::test_the_anchor_stores_the_public_key_and_no_private_key`, `services/identity-registry/tests/test_enrolment.py::test_a_valid_code_without_a_matching_signature_enrols_nothing` +5 more |
-| `P-21` | Enforced | ✅ evidenced | unit×7 | `services/identity-registry/tests/test_cip_conformance.py::test_the_acknowledgement_is_a_conformant_credential_status`, `services/identity-registry/tests/test_cip_conformance.py::test_the_delivered_message_is_a_conformant_credential_message`, `services/identity-registry/tests/test_enrolment.py::test_endpoints_come_from_the_did_document_not_the_request` +4 more |
+| `P-21` | Enforced | ✅ evidenced | unit×9 | `services/identity-registry/tests/test_cip_conformance.py::test_the_acknowledgement_is_a_conformant_credential_status`, `services/identity-registry/tests/test_cip_conformance.py::test_the_delivered_message_is_a_conformant_credential_message`, `services/identity-registry/tests/test_enrolment.py::test_endpoints_come_from_the_did_document_not_the_request` +6 more |
 | `P-22` | Enforced | ✅ evidenced | e2e×1, unit×5 | `dcp-trust`, `services/identity-registry/tests/test_cip_conformance.py::test_issuer_metadata_is_conformant`, `services/identity-registry/tests/test_cip_conformance.py::test_the_anchor_publishes_an_issuer_service_entry` +3 more |
 | `P-23` | Enforced | ✅ evidenced | unit×9 | `services/identity-registry/tests/test_conformity.py::test_criteria_are_read_from_a_file`, `services/identity-registry/tests/test_conformity.py::test_a_missing_criteria_file_is_an_error`, `services/identity-registry/tests/test_conformity.py::test_an_empty_criteria_file_is_an_error` +6 more |
 | `P-24` | Enforced | ✅ evidenced | unit×2 | `services/identity-registry/tests/test_conformity.py::test_a_deactivated_participant_is_reported_not_skipped`, `services/identity-registry/tests/test_conformity.py::test_a_participant_no_criterion_covers_is_a_finding` |

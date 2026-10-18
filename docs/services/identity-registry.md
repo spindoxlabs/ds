@@ -70,6 +70,14 @@ Fernet key derived from `IDENTITY_REGISTRY_ENCRYPTION_KEY` and a per-row salt, a
 | `DataSubjectCredential` | this person is a data subject (or a consumer user) linked to this participant |
 | `OrganizationCredential` | this organisation is verified and has accepted an agreement |
 
+An `OrganizationCredential` also names the organisation on the platform:
+`organizationId` is the owner's id (the key the platform's rows and its identity provider's
+organisation use), and `organizationType` is the organisation's **platform role**,
+`organization.role` in `owners.yaml` (e.g. `rec`, `dso`) — not the owner's schema.org `type`
+and not the participant `roles` the credential also carries. An owner that declares no
+`organization.role` gets no `organizationType` claim. Credentials issued before these claims
+existed get them by `ir-cli org reissue` (below).
+
 Revocation is a **Bitstring Status List** published at `GET /status/{list_id}` — public by
 necessity, because a verifier that cannot fetch it cannot tell a live credential from a
 revoked one.
@@ -654,6 +662,17 @@ issuer's register (P-29); periodic, exit 1 on an unreadable register.
 under [A person's credential is renewed](#a-persons-credential-is-renewed). It prints one JSON
 report — counts per DID, never an email — and **exits 1 if any renewal or delivery failed**,
 which is the alert. `--dry-run` reports `would_renew` and writes nothing.
+
+`ir-cli org reissue --alias <alias> [--dry-run]` replaces an organisation's
+`OrganizationCredential` with a successor — for instance to carry `organizationId` and
+`organizationType` to an organisation issued its credential before they existed. It issues the
+successor, delivers it to the organisation's own credential store over the DCP Storage API (the
+`CredentialService` its registered DID publishes), and **only once the holder accepted it**
+revokes the predecessor; a failed delivery revokes nothing and exits 1. No enrolment code, no
+re-enrolment and no re-verification: the organisation must already be verified, enrolled and
+hold a current credential (the first one is `org apply`'s). Legal-terms acceptance is not part
+of it and is registered separately, by hand. See
+[Reissuing an organisation's credential](../deployment/configuration.md#reissuing-an-organisations-credential).
 
 `ir-cli org apply` composes the whole onboarding chain from a single `owners.yaml` entry and
 reports each entry's outcome, rolling back only the failures.

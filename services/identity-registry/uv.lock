@@ -435,7 +435,7 @@ wheels = [
 
 [[package]]
 name = "ds-auth"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "../../libs/ds-auth" }
 dependencies = [
     { name = "cryptography" },
@@ -467,7 +467,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "ds-governance"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "../../libs/governance" }
 dependencies = [
     { name = "celine-utils" },
@@ -495,7 +495,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "ds-identity-registry"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
