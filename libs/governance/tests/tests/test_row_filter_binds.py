@@ -82,14 +82,24 @@ def test_the_resolver_keeps_an_argless_organization_filter(tmp_path: Path):
         "    row_filters:\n"
         "      - handler: member_wide\n"
         "        binds: organization\n"
-        "      - handler: argless_person\n"
     )
     rule = GovernanceResolver.from_file(path).resolve("a")
-    # The organization filter survives without args; a person filter without them
-    # is dropped exactly as before `binds` existed.
     assert [(f.handler, f.binds) for f in rule.row_filters] == [
         ("member_wide", "organization")
     ]
+
+
+@pytest.mark.rule("C-10b")
+def test_the_resolver_refuses_an_argless_person_filter(tmp_path: Path):
+    """Dropped until the two-layer row policy: then the dataset read as unfiltered."""
+    path = tmp_path / "governance.yaml"
+    path.write_text(
+        "sources:\n  a:\n    row_filters:\n      - handler: argless_person\n"
+    )
+    with pytest.raises(
+        ValueError, match=r"argless_person\) binds a person and declares no args"
+    ):
+        GovernanceResolver.from_file(path)
 
 
 class TestCompliance:

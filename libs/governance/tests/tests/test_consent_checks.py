@@ -119,9 +119,12 @@ def run(
         tmp_path,
         "governance.yaml",
         {
+            # The published schema requires the root key (`validate` runs
+            # `celine.governance.check` first).
+            "defaults": {},
             "sources": sources
             if sources is not None
-            else {"datasets.silver.meters_15m": dataset()}
+            else {"datasets.silver.meters_15m": dataset()},
         },
     )
     offers_path = None

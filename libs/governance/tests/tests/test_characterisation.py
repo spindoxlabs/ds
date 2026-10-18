@@ -49,6 +49,7 @@ from celine.governance import (
     effective_expose,
     exposure_conflict,
     parse_rule,
+    row_filter_binds,
 )
 from celine.governance.merge import merge_rules
 from ds.governance.resolver import GovernanceResolver
@@ -131,7 +132,7 @@ def ds_view(rule: Any) -> dict[str, Any]:
         "source_system": rule.source_system,
         "user_filter_column": rule.user_filter_column,
         "row_filters": [
-            {"handler": f.handler, "args": f.args.model_dump()}
+            {"handler": f.handler, "binds": f.binds, "args": f.args.model_dump()}
             for f in rule.row_filters
         ],
         "extra": rule.extra,
@@ -180,7 +181,17 @@ def shared_view(rule: Any, *, celine: bool) -> dict[str, Any]:
             "documentation_url": rule.documentation_url,
             "source_system": rule.source_system,
             "user_filter_column": rule.user_filter_column,
-            "row_filters": [dict(f) for f in rule.row_filters],
+            # Each side spelled the same way: `binds` resolved to its default,
+            # `args` as declared (absent is empty). A layer verdict states
+            # `binds` and no `args`, and two of them differ by `binds` alone.
+            "row_filters": [
+                {
+                    "handler": f.get("handler"),
+                    "binds": row_filter_binds(f),
+                    "args": dict(f.get("args") or {}),
+                }
+                for f in rule.row_filters
+            ],
             "extra": rule.extra,
             "dcat": dcat,
             "expose": bool(space and space.expose),
@@ -204,7 +215,11 @@ def shared_view(rule: Any, *, celine: bool) -> dict[str, Any]:
         "source_system": rule.source_system,
         "user_filter_column": rule.user_filter_column,
         "row_filters": [
-            {"handler": f.handler, "args": f.args.model_dump()}
+            {
+                "handler": f.handler,
+                "binds": f.binds,
+                "args": f.args.model_dump(exclude_none=True),
+            }
             for f in rule.row_filters
         ],
         "extra": rule.extra,
@@ -580,20 +595,17 @@ class TestDeclaredDivergences:
             is None
         )
 
-    def test_malformed_row_filters_are_dropped_here_and_rejected_upstream(
-        self, tmp_path
-    ):
-        """ds is lenient where upstream is typed.
+    @pytest.mark.rule("C-10b")
+    def test_malformed_row_filters_are_refused_here_and_kept_upstream(self, tmp_path):
+        """ds refuses where upstream keeps the raw entry.
 
-        ds builds `RowFilter` / `RowFilterArgs` and skips anything that is not a dict
-        carrying both `handler` and `args`. Upstream keeps `list[dict]`, so a filter
-        missing its handler survives as a raw dict and a non-dict entry fails
-        validation outright.
-
-        Phase 1 re-types `row_filters` on the subclass, which is what keeps
-        `subject_column` and the data-plane contract working. What it must not do
-        silently is change which malformed files load: a filter dropped without a
-        word is a dataset served unfiltered.
+        ds builds `RowFilter` / `RowFilterArgs`; it used to skip anything that was not
+        a dict carrying `handler` and `args`, and a filter dropped without a word is a
+        dataset served unfiltered — a person filter without `args` vanished, and with
+        it the consent gate. It now refuses the file, naming the entry. Upstream keeps
+        `list[dict]`, so a filter missing its handler survives as a raw dict there
+        (its validator, `celine-governance validate`, reports it) and a non-dict entry
+        fails validation outright on both sides.
         """
         path = tmp_path / "governance.yaml"
         path.write_text(
@@ -602,21 +614,19 @@ class TestDeclaredDivergences:
             "    row_filters:\n"
             "      - handler: h1\n"
             "        args: {column: c}\n"
-            "      - handler: h2\n"
             "      - args: {column: c2}\n"
         )
 
-        ds_rule = GovernanceResolver.from_file(path).resolve("a")
-        assert [(f.handler, f.args.column) for f in ds_rule.row_filters] == [
-            ("h1", "c")
-        ]
+        with pytest.raises(ValueError, match=r"row_filters\[1\] names no handler"):
+            GovernanceResolver.from_file(path)
 
         celine_rule = CelineResolver.from_file(path).resolve("a")
-        assert len(celine_rule.row_filters) == 3, (
+        assert len(celine_rule.row_filters) == 2, (
             "kept whole, handler-less entry and all"
         )
 
         path.write_text("sources:\n  a:\n    row_filters: ['junk']\n")
-        assert GovernanceResolver.from_file(path).resolve("a").row_filters == []
+        with pytest.raises(ValueError, match="not a mapping"):
+            GovernanceResolver.from_file(path)
         with pytest.raises(Exception):
             CelineResolver.from_file(path).resolve("a")

@@ -31,7 +31,12 @@ dependencies = [
     # remains. Installing 2.4 under this code would not fail to import — it would
     # drop ds's fields on every merge, which is the exact defect ADR-0013 exists
     # to end.
-    "celine-utils>=2.6.0",
+    #
+    # **`>=2.7.0` since the two-layer row policy.** 2.7 names the layer verdicts
+    # (`LAYER_HANDLERS`: `allow_all`/`deny_all`), which the consent gate, the
+    # resolver and the PDP must tell apart from filters, and ships the
+    # `celine.governance.check` rules `ds-governance validate` runs first.
+    "celine-utils>=2.7.0",
     "httpx>=0.27",
     "pydantic>=2.7",
     "pyyaml>=6.0",

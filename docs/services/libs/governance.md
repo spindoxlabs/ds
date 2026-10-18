@@ -31,13 +31,15 @@ defaults:
 sources:
   datasets.silver.meters_15m:
     title: 15-minute meter readings
-    ownership: [{name: example-org}]
+    ownership: [{name: example-org, type: DATA_OWNER}]
     access_level: restricted
     classification: pii
     retention_days: 365
     row_filters:
       - handler: rec_registry
         args: {column: device_id}
+      - handler: allow_all
+        binds: organization
     dataspace:
       expose: true
       sharing_offers: [household-energy-flexibility]
@@ -61,6 +63,19 @@ file has to change — but new ones should be written the canonical way, and a f
 stating both gets the canonical value.
 
 A dataset points at its offers; an offer never lists its datasets.
+
+**Row filters come in two layers**, named by each entry's `binds`: `person` (the default —
+per-subject access control, and the only kind that gates on consent) and `organization`
+(which organization's rows these are). A layer that narrows nothing says so with
+`allow_all`, one that admits no row with `deny_all`; both must state `binds`, take no
+`args`, and are a layer's verdict rather than a filter — no consent signal, never put on the
+wire, and `deny_all` denies the dataset at the PDP. The platform's data plane refuses a
+non-`open` dataset that leaves a layer undeclared, so the producer files state both.
+
+**A malformed entry fails the file's load**: `row_filters` that is not a list, an entry
+that is not a mapping or names no handler, `args` that is not a mapping, a person filter
+without `args`. Until 2026-10-18 such an entry was dropped, and a dropped filter read as
+no filter.
 
 ## How a rule is resolved
 
@@ -296,11 +311,18 @@ re-consent.**
 ## Validation
 
 `ds-governance validate` runs the checks below before a governance file may be imported.
-Errors block; warnings do not.
+Errors block; warnings do not, except under `--strict` (the `compliance:validate` tasks).
+
+**The platform's rules come first** — celine-utils' `celine.governance.check` (≥ 2.7), on
+the file as ds materializes it: the base plus the overlay ds would merge (the name given or
+`GOVERNANCE_OVERLAY_NAME`), never a neighbour named after the directory, which upstream
+alone would infer. Reported as `governance-<rule>`; its consent-coherence rule is skipped,
+being a port of ds's own check below.
 
 | Group | Checks |
 |---|---|
-| File | exists, parses, declares sources, exposes something |
+| Platform (`governance-*`) | the published JSON schema (errors; an unknown key — the deprecated `policy:` block included — a warning); both row-policy layers declared on every exposed non-`open` dataset; handler names known; `allow_all` / `deny_all` stating `binds`, never both in one layer |
+| File | exists, parses, loads (a malformed row filter is reported here), declares sources, exposes something |
 | Enums | access level, classification |
 | Collisions | two dataset keys deriving the same asset, policy or contract id |
 | Coherence | consent required with no filter; `pii` with no filter; a blank filter column |

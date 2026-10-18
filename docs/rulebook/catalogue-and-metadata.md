@@ -88,13 +88,15 @@ per type of data product, and to record it here. `DSSC-DSO-16`, `-17`, `-18` and
 | `row_filters[]` | How rows are narrowed to the subjects who consented |
 
 **These four are not independent, and the table above reads as though they were.** Three of
-them — `classification: pii`, `dataspace.consent_required`, `row_filters[]`, plus the legacy
-`user_filter_column` — are ORed by the connector, so **each one alone** changes how a
-dataset is treated: it becomes consent-gated, and `POST /internal/dataplane/authorize` stops
-answering a bare `ALLOW` for it. A producer supplying only `row_filters[]` has gated the
-dataset whether or not they meant to, and a producer deleting them has un-gated it. See
-[Personal data](personal-data.md) §1, which states the rule; this table lists what a complete
-personal-data product declares, which is all four together.
+them — `classification: pii`, `dataspace.consent_required`, a `row_filters[]` entry binding a
+person, plus the legacy `user_filter_column` — are ORed by the connector, so **each one
+alone** changes how a dataset is treated: it becomes consent-gated, and
+`POST /internal/dataplane/authorize` stops answering a bare `ALLOW` for it. Only a filter
+binding a person counts: one binding an organization (`binds: organization`) and a layer
+verdict (`allow_all` / `deny_all`) gate nothing. A producer supplying only a person filter
+has gated the dataset whether or not they meant to, and a producer deleting it has un-gated
+it. See [Personal data](personal-data.md) §1, which states the rule; this table lists what a
+complete personal-data product declares, which is all four together.
 
 **A dataset names its offers; an offer never names datasets.** Offers are declared by
 whoever declares the dataset, so an offer listing arbitrary dataset keys would let one
@@ -104,7 +106,8 @@ producer write the consent text for another's data.
 |---|---|---|
 | C-9 | An offering missing any mandatory field is not published | **Enforced** — Pydantic models plus `task compliance:validate` |
 | C-10 | A `pii` dataset with an unresolvable sharing offer is not published — advertising a consent gate that can never open is worse than not publishing | **Enforced** |
-| C-10a | A dataset declaring `row_filters[]` or `user_filter_column` must also declare `classification: pii` or `dataspace.consent_required` | **Enforced** — an error in `check_consent_coherence`. The file would otherwise assert per-subject access control while declaring the data impersonal, and the filters would be the only thing gating it |
+| C-10a | A dataset declaring a row filter binding a person (not a layer verdict) or `user_filter_column` must also declare `classification: pii` or `dataspace.consent_required` | **Enforced** — an error in `check_consent_coherence`. The file would otherwise assert per-subject access control while declaring the data impersonal, and the filters would be the only thing gating it |
+| C-10b | A malformed row filter fails the governance file's load; it is never dropped | **Enforced** — the resolver refuses a `row_filters` that is not a list, an entry that is not a mapping or names no handler, `args` that is not a mapping, and a person filter without `args`, naming the entry; `ds-governance validate` reports it as a `governance-file` error. Until 2026-10-18 such an entry was dropped, and a dropped filter read as no filter — a person-layer `deny_all` served |
 | C-11 | An empty `purpose[]` is never a wildcard for personal data | **Enforced** — fails closed |
 | C-12 | Metadata is checked for compliance with the standards it claims (`DSO-11`) | **Enforced.** The `dcat-ap` check in `ds-governance validate` splits DCAT-AP's own obligation levels: **mandatory** properties (`dct:title`, `dct:description`) are errors, **recommended** ones (`dcat:theme`, `dct:license`, `dct:accrualPeriodicity`, `dct:spatial`, `dct:temporal`) are warnings. It checks the *governance input*, not the emitted record — both mandatory properties have a fallback in the emitter, so a file declaring neither publishes a structurally valid document that says nothing, and a validator reading the output would pass it. `libs/governance/tests/tests/test_declared_not_enforced.py`, including one case asserting this repository's own governance files conform |
 | C-13 | Metadata is checked for compliance with this rulebook (`DSO-12`) | **Not enforced.** It was *partly* while a machine-readable projection of this rulebook existed, and briefly *enforced* on 2026-08-09 when `ds-governance validate` cited rule ids in its findings. **Both were removed the same day**, with the projection: the citation map was one more hand-maintained artefact, and the record it cited into was 79% unevidenced assertion, so *checked against the rulebook* meant checked against a claim. See [the index](index.md). Closing this honestly needs the rulebook's statuses to be backed by evidence that runs, before anything checks metadata against them |

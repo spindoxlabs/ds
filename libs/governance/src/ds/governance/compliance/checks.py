@@ -452,14 +452,17 @@ def check_consent_coherence(
     Only a filter **binding a person** counts as per-subject filtering (celine-utils
     REQ-0010). A fourth arm errors on personal data narrowed *only* by organization
     filters: the likeliest cause is a person filter marked `binds: organization`,
-    which would otherwise read as merely incomplete.
+    which would otherwise read as merely incomplete. `allow_all` / `deny_all` count
+    on neither side: they decide a layer and narrow nothing (celine-utils rule 5).
     """
     for item in exposed:
         rule = item.rule
         # A filter binding an organization is not per-subject access control
         # (celine-utils REQ-0010): only a person filter counts here.
-        person_filters = [f for f in rule.row_filters if f.binds_person]
-        organization_filters = [f for f in rule.row_filters if not f.binds_person]
+        person_filters = [f for f in rule.row_filters if f.narrows_person]
+        organization_filters = [
+            f for f in rule.row_filters if not f.binds_person and not f.is_layer_verdict
+        ]
         has_filter = bool(rule.user_filter_column or person_filters)
         declares_personal = bool(
             rule.dataspace.consent_required or rule.classification == "pii"

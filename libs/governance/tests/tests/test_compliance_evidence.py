@@ -29,8 +29,9 @@ PUBLISHER = "did:web:provider.example.org"
 
 
 def write_governance(tmp_path: Path, config: dict) -> Path:
+    """`defaults:` added empty when omitted: the published schema requires it."""
     path = tmp_path / "governance.yaml"
-    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    path.write_text(yaml.safe_dump({"defaults": {}, **config}), encoding="utf-8")
     return path
 
 
@@ -369,7 +370,7 @@ class TestValidateAgainstRuntime:
                         "access_level": "open",
                         "title": "Owner-resolution fixture",
                         "description": "Exercises the runtime owner lookup.",
-                        "ownership": [{"name": "example-org"}],
+                        "ownership": [{"name": "example-org", "type": "DATA_OWNER"}],
                         "policy": {"purpose": ["GridMonitoring"]},
                         "dataspace": {
                             "expose": True,
@@ -408,7 +409,7 @@ class TestValidateAgainstRuntime:
                         "access_level": "open",
                         "title": "Owner-resolution fixture",
                         "description": "Exercises the runtime owner lookup.",
-                        "ownership": [{"name": "ghost-org"}],
+                        "ownership": [{"name": "ghost-org", "type": "DATA_OWNER"}],
                         "dataspace": {
                             "expose": True,
                             "data_address": {"base_url": "https://api.example.org"},

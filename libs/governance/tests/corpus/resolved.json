@@ -46,13 +46,20 @@
         "valid_until": null
       },
       "dcat": {
-        "accrual_periodicity": null,
+        "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
         "conforms_to": "https://grid-operator.dataspaces.localhost/ns/grid-capacity",
         "language_uris": [],
         "publisher_uri": null,
-        "spatial_uris": [],
-        "temporal": null,
-        "themes": []
+        "spatial_uris": [
+          "http://publications.europa.eu/resource/authority/continent/EUROPE"
+        ],
+        "temporal": {
+          "end": null,
+          "start": "2024-01-01"
+        },
+        "themes": [
+          "http://publications.europa.eu/resource/authority/data-theme/ENER"
+        ]
       },
       "description": "Available headroom per substation, hourly. Published by the distribution system operator so that flexibility can be planned against real limits.",
       "documentation_url": null,
@@ -126,13 +133,20 @@
         "valid_until": null
       },
       "dcat": {
-        "accrual_periodicity": null,
+        "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
         "conforms_to": null,
         "language_uris": [],
         "publisher_uri": null,
-        "spatial_uris": [],
-        "temporal": null,
-        "themes": []
+        "spatial_uris": [
+          "http://publications.europa.eu/resource/authority/continent/EUROPE"
+        ],
+        "temporal": {
+          "end": null,
+          "start": "2024-01-01"
+        },
+        "themes": [
+          "http://publications.europa.eu/resource/authority/data-theme/ENER"
+        ]
       },
       "description": "Quarter-hourly readings per supply point, held by the distribution system operator, released only for the members whose consent their community has registered here.",
       "documentation_url": null,
@@ -153,6 +167,7 @@
             "column": "pod",
             "key_type": "pod"
           },
+          "binds": "person",
           "handler": "subject_key_match"
         }
       ],
@@ -214,13 +229,20 @@
         "valid_until": null
       },
       "dcat": {
-        "accrual_periodicity": null,
+        "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
         "conforms_to": null,
         "language_uris": [],
         "publisher_uri": null,
-        "spatial_uris": [],
-        "temporal": null,
-        "themes": []
+        "spatial_uris": [
+          "http://publications.europa.eu/resource/authority/continent/EUROPE"
+        ],
+        "temporal": {
+          "end": null,
+          "start": "2024-01-01"
+        },
+        "themes": [
+          "http://publications.europa.eu/resource/authority/data-theme/ENER"
+        ]
       },
       "description": "Day-ahead flexibility forecast for the community, supplied to the aggregator named in the offer under contract.",
       "documentation_url": null,
@@ -235,7 +257,22 @@
         ]
       ],
       "retention_days": 365,
-      "row_filters": [],
+      "row_filters": [
+        {
+          "args": {
+            "column": null
+          },
+          "binds": "person",
+          "handler": "allow_all"
+        },
+        {
+          "args": {
+            "column": null
+          },
+          "binds": "organization",
+          "handler": "allow_all"
+        }
+      ],
       "source_system": "REC forecasting",
       "tags": [
         "flexibility",
@@ -292,13 +329,20 @@
         "valid_until": null
       },
       "dcat": {
-        "accrual_periodicity": null,
+        "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
         "conforms_to": null,
         "language_uris": [],
         "publisher_uri": null,
-        "spatial_uris": [],
-        "temporal": null,
-        "themes": []
+        "spatial_uris": [
+          "http://publications.europa.eu/resource/authority/continent/EUROPE"
+        ],
+        "temporal": {
+          "end": null,
+          "start": "2024-01-01"
+        },
+        "themes": [
+          "http://publications.europa.eu/resource/authority/data-theme/ENER"
+        ]
       },
       "description": "Day-ahead headroom forecast, supplied to the grid operator named in the offer under contract. The dev consumer is deliberately not a recipient.",
       "documentation_url": null,
@@ -313,7 +357,22 @@
         ]
       ],
       "retention_days": 365,
-      "row_filters": [],
+      "row_filters": [
+        {
+          "args": {
+            "column": null
+          },
+          "binds": "person",
+          "handler": "allow_all"
+        },
+        {
+          "args": {
+            "column": null
+          },
+          "binds": "organization",
+          "handler": "allow_all"
+        }
+      ],
       "source_system": "REC forecasting",
       "tags": [
         "forecast",
@@ -369,13 +428,20 @@
         "valid_until": null
       },
       "dcat": {
-        "accrual_periodicity": null,
+        "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
         "conforms_to": null,
         "language_uris": [],
         "publisher_uri": null,
-        "spatial_uris": [],
-        "temporal": null,
-        "themes": []
+        "spatial_uris": [
+          "http://publications.europa.eu/resource/authority/continent/EUROPE"
+        ],
+        "temporal": {
+          "end": null,
+          "start": "2024-01-01"
+        },
+        "themes": [
+          "http://publications.europa.eu/resource/authority/data-theme/ENER"
+        ]
       },
       "description": "29 ML features for energy consumption forecasting.",
       "documentation_url": null,
@@ -390,7 +456,22 @@
         ]
       ],
       "retention_days": 365,
-      "row_filters": [],
+      "row_filters": [
+        {
+          "args": {
+            "column": null
+          },
+          "binds": "person",
+          "handler": "allow_all"
+        },
+        {
+          "args": {
+            "column": null
+          },
+          "binds": "organization",
+          "handler": "allow_all"
+        }
+      ],
       "source_system": "Open-Meteo",
       "tags": [
         "features",
@@ -451,13 +532,20 @@
         "valid_until": null
       },
       "dcat": {
-        "accrual_periodicity": null,
+        "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
         "conforms_to": "https://rec.dataspaces.localhost/ns/meter-readings",
         "language_uris": [],
         "publisher_uri": null,
-        "spatial_uris": [],
-        "temporal": null,
-        "themes": []
+        "spatial_uris": [
+          "http://publications.europa.eu/resource/authority/continent/EUROPE"
+        ],
+        "temporal": {
+          "end": null,
+          "start": "2024-01-01"
+        },
+        "themes": [
+          "http://publications.europa.eu/resource/authority/data-theme/ENER"
+        ]
       },
       "description": "Aggregated smart meter readings at 15-minute intervals.",
       "documentation_url": null,
@@ -477,7 +565,15 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
+        },
+        {
+          "args": {
+            "column": null
+          },
+          "binds": "organization",
+          "handler": "allow_all"
         }
       ],
       "source_system": "Local meter sample adapter",
@@ -643,6 +739,7 @@
             "column": "pod",
             "key_type": "pod"
           },
+          "binds": "person",
           "handler": "subject_key_match"
         }
       ],
@@ -969,6 +1066,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -2079,6 +2177,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -2249,6 +2348,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -2338,6 +2438,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -2507,6 +2608,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -2595,6 +2697,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -2684,6 +2787,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -2773,6 +2877,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -3112,6 +3217,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -3201,6 +3307,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -3292,6 +3399,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -3381,6 +3489,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],
@@ -3470,6 +3579,7 @@
           "args": {
             "column": "device_id"
           },
+          "binds": "person",
           "handler": "rec_registry"
         }
       ],

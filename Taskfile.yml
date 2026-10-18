@@ -1877,11 +1877,17 @@ tasks:
       # validating only the first one leaves the second free to name a purpose
       # outside the profile or an owner that does not resolve — and the failure
       # would surface as a refused negotiation, three services away.
+      #
+      # **`--strict`: a warning fails.** The validator runs celine-utils'
+      # platform rules first (schema with unknown keys, the two row-policy layers,
+      # handler names), and an unknown key is a warning there — read as nothing,
+      # it is exactly the silent drop the strict gate exists to stop.
       - |
+        set -euo pipefail
         cd libs/governance
         for dir in governance-rec governance-grid-operator; do
           echo "→ $dir"
-          uv run ds-governance validate \
+          uv run ds-governance validate --strict \
             --file ../../services/connector/$dir/governance.yaml \
             --owners ../../services/identity-registry/seed/owners.dev.yaml
         done
@@ -1927,7 +1933,7 @@ tasks:
         fi
         for file in "${producers[@]}"; do
           echo "→ $(basename "$(dirname "$file")")"
-          uv run ds-governance validate \
+          uv run ds-governance validate --strict \
             --file "$file" \
             --identity-registry-url "$registry" \
             --token "$token"

@@ -15,6 +15,12 @@ organization's members inside the platform; no person is behind such a row, so i
 nothing about consent. Forgetting `binds: organization` on one over-gates the dataset —
 and `check_consent_coherence` then errors — never the other way round.
 
+**Nor do `allow_all` / `deny_all`, on either layer.** They are a layer's verdict, not a
+filter: a person layer declared `allow_all` states that nobody's rows need narrowing,
+and `deny_all` that no row leaves at all (the PDP refuses it before this gate is asked).
+Counting either as a consent signal would gate every organization-bound dataset whose
+person layer says `allow_all` — the shape the two-layer row policy gives them.
+
 **Four signals, ORed, and any one alone gates the dataset.** That is what the code has
 always done; what is new here is that it is written down once and says *which* signal
 answered. Measured across `celine-eu/celine-pipelines` on 2026-09-02: all 20 `rec`-owned
@@ -44,7 +50,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from celine.governance import row_filter_binds
+from celine.governance import LAYER_HANDLERS, row_filter_binds
 
 from .models import GovernanceRuleV2
 
@@ -98,6 +104,20 @@ class ConsentGate:
         return "consent-gated by " + ", ".join(self.signals)
 
 
+def narrows_person(row_filter) -> bool:
+    """Whether one row filter narrows rows to data subjects.
+
+    A filter binding a person that is not a layer verdict. Takes the typed
+    `RowFilter` or the dict a hand-built rule carries, as `row_filter_binds` does.
+    """
+    handler = (
+        row_filter.get("handler")
+        if isinstance(row_filter, dict)
+        else getattr(row_filter, "handler", None)
+    )
+    return row_filter_binds(row_filter) == "person" and handler not in LAYER_HANDLERS
+
+
 def consent_gate(rule: GovernanceRuleV2) -> ConsentGate:
     """Resolve the gate, naming every declaration that asserts it.
 
@@ -121,7 +141,7 @@ def consent_gate(rule: GovernanceRuleV2) -> ConsentGate:
             (
                 rule.dataspace.consent_required,
                 rule.user_filter_column,
-                any(row_filter_binds(f) == "person" for f in rule.row_filters),
+                any(narrows_person(f) for f in rule.row_filters),
                 rule.classification == "pii",
             ),
             strict=True,

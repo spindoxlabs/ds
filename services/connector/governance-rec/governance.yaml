@@ -3,6 +3,17 @@ defaults:
   classification: green
   tags: []
   retention_days: 365
+  # The DCAT-AP *recommended* properties, stated once for every dataset here.
+  # `task compliance:validate` runs the validator `--strict`, where a warning
+  # fails, and a dev fixture is the file a producer copies.
+  dcat:
+    themes:
+      - http://publications.europa.eu/resource/authority/data-theme/ENER
+    spatial_uris:
+      - http://publications.europa.eu/resource/authority/continent/EUROPE
+    accrual_periodicity: http://publications.europa.eu/resource/authority/frequency/DAILY
+    temporal:
+      start: "2024-01-01"
   ownership:
     - name: example-org
       type: DATA_OWNER
@@ -19,6 +30,14 @@ sources:
     classification: green
     tags: [weather, gold, features]
     source_system: Open-Meteo
+    # Both row-policy layers stated (celine-utils rule 2): no person and no
+    # organization is behind these rows, so neither layer narrows. An undeclared
+    # layer is refused by the platform's data plane under its deny default.
+    row_filters:
+      - handler: allow_all
+        binds: person
+      - handler: allow_all
+        binds: organization
 
     # `dataspace.purpose[]` is the only runtime declaration of which purposes a
     # dataset may serve. `tags` are DCAT-AP catalogue keywords and carry no
@@ -67,6 +86,10 @@ sources:
       - handler: rec_registry
         args:
           column: device_id
+      # The organization layer, stated: one community's rows, nothing to narrow
+      # by organization (celine-utils rule 2).
+      - handler: allow_all
+        binds: organization
     tags: [meters, silver, pii, rec]
 
     # The payload semantic model these columns conform to (rulebook
@@ -142,6 +165,14 @@ sources:
     classification: green
     tags: [flexibility, gold, forecast]
     source_system: REC forecasting
+    # Both row-policy layers stated (celine-utils rule 2): no person and no
+    # organization is behind these rows, so neither layer narrows. An undeclared
+    # layer is refused by the platform's data plane under its deny default.
+    row_filters:
+      - handler: allow_all
+        binds: person
+      - handler: allow_all
+        binds: organization
     dataspace:
       expose: true
       medallion: gold
@@ -167,6 +198,14 @@ sources:
     classification: green
     tags: [grid, gold, forecast]
     source_system: REC forecasting
+    # Both row-policy layers stated (celine-utils rule 2): no person and no
+    # organization is behind these rows, so neither layer narrows. An undeclared
+    # layer is refused by the platform's data plane under its deny default.
+    row_filters:
+      - handler: allow_all
+        binds: person
+      - handler: allow_all
+        binds: organization
     dataspace:
       expose: true
       medallion: gold

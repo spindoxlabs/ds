@@ -68,3 +68,19 @@ def test_of_several_organization_filters_the_first_is_sent():
 def test_a_person_filter_is_never_the_organization_filter():
     assert _organization_spec(PERSON) is None
     assert _organization_spec() is None
+
+
+@pytest.mark.rule("D-15", "X-19")
+def test_a_person_layer_verdict_is_never_the_person_filter():
+    """`allow_all` narrows nothing; sending it with the consenting subjects
+    would make the data plane filter on a column no verdict names."""
+    allow = {"handler": "allow_all", "binds": "person"}
+    assert _spec(allow) is None
+    assert _spec(allow, PERSON)["handler"] == "rec_registry"
+
+
+@pytest.mark.rule("X-17", "X-19")
+def test_an_organization_layer_verdict_is_never_the_organization_filter():
+    allow = {"handler": "allow_all", "binds": "organization"}
+    assert _organization_spec(allow) is None
+    assert _organization_spec(allow, ORGANIZATION)["handler"] == "organization_match"

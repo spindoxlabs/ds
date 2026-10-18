@@ -22,7 +22,7 @@ resolves the gate as the **disjunction** of four declarations
 |---|---|
 | `dataspace.consent_required: true` | nothing else — it is the explicit statement |
 | `classification: pii` | drives the automatic ODRL prohibitions in [Policies](policies.md) §3 |
-| `row_filters[]` | names the column rows are narrowed by |
+| `row_filters[]` — a filter binding a person | names the column rows are narrowed by. A filter binding an organization does not count, nor does a layer verdict (`allow_all` / `deny_all`) on either layer |
 | `user_filter_column` | the legacy spelling of the same, superseded by `row_filters` (`GOV-05`) |
 
 Those are two different consequences of `classification: pii` — gating the dataset, and
@@ -53,7 +53,7 @@ honest about a limit in another:
 | D-1 | Pseudonymised data is personal data. A dataset keyed by device id or subject DID rather than by name is still `pii` | **Declared** — classification is the producer's declaration; nothing detects a misclassification |
 | D-2 | Provenance records carry **codes, pseudonymous DIDs and hashes only — never PII** | **Enforced** by the event schemas across all sixteen types, and since 2026-09-20 at the one boundary where construction was not enough. "By construction" held for what a schema *declares* and not for what a caller *fills*: `QueryExecuted.authorized_subject_ids` is a free list of strings, and a live run put 22 raw email addresses in it. ds had handed them over itself — the data-plane row filter's `principals` must be registry-native for the handler to match rows, and in this realm a username is an email — and the data plane echoed them into its audit call. `POST /internal/audit/query` now records only `did:` values. The row filter keeps its usernames, because that is what filtering needs; the record does not get them — it gets `DataplaneRowFilter.subject_dids`, the same people as DIDs, added the same day so that a PEP has something safe to report rather than nothing. See `L-3` in [Provenance and logging](provenance-and-logging.md). **Since 2026-10-05 the pseudonymous DIDs a record holds age out too**: after the deployment's retention period they are replaced by keyed pseudonyms, and the record and its hash chain stay intact (`L-17`, `L-18`) |
 | D-3 | A dataset may not be reclassified downward (from `pii`) without a documented assessment | **Declared** — no mechanism |
-| D-3a | Any one of the four declarations above gates a dataset; they are ORed, never required together | **Enforced** — `ds.governance.consent.consent_gate`, one predicate for the ODRL offer, the PDP verdict and the compliance report |
+| D-3a | Any one of the four declarations above gates a dataset; they are ORed, never required together | **Enforced** — `ds.governance.consent.consent_gate`, one predicate for the ODRL offer, the PDP verdict and the compliance report. `allow_all` / `deny_all` are not a declaration (since 2026-10-18; before, the resolver dropped them on the person layer, which hid the question) |
 | D-3b | A dataset declaring row-level filtering must also declare that it is personal | **Enforced** — an error in `check_consent_coherence`. Both directions of the coherence check are guarded now; until 2026-09-03 only the unenforceable one was, and a file could rest its whole protection on `row_filters` and pass |
 
 ### What a bare `ALLOW` means
@@ -63,6 +63,17 @@ honest about a limit in another:
 filter binding an organization. That verdict is reached by *absence*, not by assertion:
 nothing in the file said "this data is impersonal" — nothing said anything, and the gate
 found nothing to object with.
+
+**A layer verdict is a statement, not a filter.** The platform's row policy has two layers,
+`person` and `organization`, and a file states what a layer does with `allow_all` (every
+row) or `deny_all` (none), `binds` naming the layer (celine-utils `LAYER_HANDLERS`). Neither
+is a consent declaration. `allow_all` travels nowhere — the `row_filter` slot stays empty
+and the data plane applies its own declaration of the two layers. `deny_all` on either layer
+answers `DENY` with `row_policy_denied`, before consent or organization is looked at:
+nothing they could add changes the answer. Until 2026-10-18 the resolver silently dropped a
+verdict on the person layer (it carries no `args`), so a person-layer `deny_all` read as
+nothing declared and served; a malformed filter now fails the file's load instead of being
+dropped.
 
 **An organization filter is not lifted by the agreement.** When an ungated dataset declares
 a row filter binding an organization (`binds: organization` — `organization_match`,
@@ -93,7 +104,10 @@ refusal instead of a permission, which is the rule `DataplaneRowFilter`'s `extra
 already applies one layer down. It is **not** implemented: it is a fail-closed change that
 refuses datasets which pass today and needs every deployment's governance updated first, so
 it is a decision this page has to take before it is code
-([#21](https://github.com/spindoxlabs/ds/issues/21), direction 3). Open.
+([#21](https://github.com/spindoxlabs/ds/issues/21), direction 3). Open. The statement now
+exists — `allow_all` on the person layer says exactly "no person is behind these rows", and
+the platform's validator requires both layers on every non-`open` dataset — but ds does not
+yet *require* it before the unfiltered path.
 
 Which declaration gated a dataset is recorded at the decision point — `consent_gate` names
 its signals and the authorize path logs them — so a verdict can be traced back to the line

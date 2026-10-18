@@ -32,6 +32,17 @@ defaults:
   classification: green
   tags: []
   retention_days: 365
+  # The DCAT-AP *recommended* properties, stated once for every dataset here.
+  # `task compliance:validate` runs the validator `--strict`, where a warning
+  # fails, and a dev fixture is the file a producer copies.
+  dcat:
+    themes:
+      - http://publications.europa.eu/resource/authority/data-theme/ENER
+    spatial_uris:
+      - http://publications.europa.eu/resource/authority/continent/EUROPE
+    accrual_periodicity: http://publications.europa.eu/resource/authority/frequency/DAILY
+    temporal:
+      start: "2024-01-01"
   ownership:
     - name: grid-operator
       type: DATA_OWNER

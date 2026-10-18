@@ -251,7 +251,8 @@ secrets:
 
 # ── helm test ─────────────────────────────────────────────────────────────────
 # `helm test` reads the catalogue as this participant's organisation client and
-# compares its size with what the mounted governance exposes. Rendered for a
+# compares the asset ids offered with the datasets the mounted governance exposes:
+# they must match, and nothing exposed with nothing offered passes. Rendered for a
 # provider with governance. `tlsVerify: false` only for a rehearsal cluster with
 # a private CA.
 tests:

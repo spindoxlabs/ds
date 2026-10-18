@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import httpx
-from celine.governance import row_filter_binds
+from celine.governance import DENY_ALL, LAYER_HANDLERS, row_filter_binds
 from ds.governance import (
     ALLOW,
     DENY,
@@ -496,10 +496,6 @@ class ConsumerOrganization:
     reason: str | None = None
 
 
-#: Row-filter handlers that are a layer's verdict, not a filter on a column.
-_LAYER_VERDICTS = frozenset({"allow_all", "deny_all"})
-
-
 async def _consumer_organization(
     agreement: dict, consumer_did: str, settings, token_provider=None
 ) -> ConsumerOrganization:
@@ -555,10 +551,10 @@ def _organizations_for(
     if organization is None:
         return [], None
     spec = _organization_filter_spec(rule)
-    bound = spec is not None and spec["handler"] not in _LAYER_VERDICTS
+    bound = spec is not None
     if organization.id is None:
         return [], (organization.reason if bound else None)
-    declared_type = (spec or {}).get("args", {}).get("org_type") if bound else None
+    declared_type = spec["args"].get("org_type") if bound else None
     if declared_type and declared_type != organization.type:
         return [], "organization_type_mismatch"
     return [organization.id], None
@@ -603,6 +599,21 @@ async def _authorize_dataset(
         rule = vocab.resolve_dataset(dataset_id)
     except vocab.VocabularyError:
         return verdict(DENY, "dataset_unknown")
+
+    denied = _denied_layer(rule)
+    if denied is not None:
+        # **A layer declared `deny_all` admits no row, whoever asks.** Refused
+        # before consent or organisation is looked at: nothing either could add
+        # changes the answer, and an `ALLOW` the data plane then empties would
+        # report a disclosure that never happens (celine `dataset-api` answers
+        # the same dataset 403 `row_policy_denied` on its own path).
+        log.info(
+            "dataplane authorize: %s declares deny_all on its %s layer",
+            dataset_id,
+            denied,
+            extra={"dataset_id": dataset_id, "row_policy_layer": denied},
+        )
+        return verdict(DENY, "row_policy_denied")
 
     if organization is not None:
         organizations, organization_reason = _organizations_for(rule, organization)
@@ -798,6 +809,10 @@ def _row_filter_spec(rule) -> dict | None:
         # its own — `_organization_filter_spec`.
         if row_filter_binds(row_filter) != "person":
             continue
+        # A layer verdict narrows nothing: `allow_all` is no filter to name the
+        # consenting subjects in, and `deny_all` never reaches this point.
+        if getattr(row_filter, "handler", None) in LAYER_HANDLERS:
+            continue
         args_dict = _declared_args(row_filter)
         handler = getattr(row_filter, "handler", None)
         if handler:
@@ -819,13 +834,26 @@ def _organization_filter_spec(rule) -> dict | None:
     occupies the decision's single `row_filter` slot. The first one, when a file
     declares several: filters AND, and a data plane that cannot apply one of them
     refuses the request, so which one is sent does not change the outcome.
+
+    A layer verdict is not a filter: an organization layer declared `allow_all`
+    has nothing to carry, and the verdict leaves the slot empty.
     """
     for row_filter in getattr(rule, "row_filters", None) or []:
         if row_filter_binds(row_filter) != "organization":
             continue
+        if getattr(row_filter, "handler", None) in LAYER_HANDLERS:
+            continue
         handler = getattr(row_filter, "handler", None)
         if handler:
             return {"handler": str(handler), "args": _declared_args(row_filter)}
+    return None
+
+
+def _denied_layer(rule) -> str | None:
+    """The layer a `deny_all` decides, or None when no layer declares one."""
+    for row_filter in getattr(rule, "row_filters", None) or []:
+        if getattr(row_filter, "handler", None) == DENY_ALL:
+            return row_filter_binds(row_filter)
     return None
 
 

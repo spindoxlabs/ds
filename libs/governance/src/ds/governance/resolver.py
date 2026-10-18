@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from celine.governance import DEFAULT_ROW_FILTER_BINDS, LAYER_HANDLERS
 from celine.governance.merge import merge_rules
 from celine.governance.resolver import parse_rule
 
@@ -32,6 +33,52 @@ class GovernanceConfig:
     ):
         self.defaults: GovernanceRuleV2 = defaults or GovernanceRuleV2()
         self.sources: dict[str, GovernanceRuleV2] = sources or {}
+
+
+def _check_row_filter_items(value: Any) -> list[dict[str, Any]]:
+    """The raw `row_filters` list, or `ValueError` naming the first bad entry.
+
+    A list of mappings, each naming a `handler`; `args`, when present, a mapping.
+    `args` may be omitted by a filter binding an organization (`member_wide`
+    takes none) and by a layer verdict (`allow_all`/`deny_all`, which narrow by no
+    column); a person filter without them has nothing to narrow on. `null` is
+    absent, for the list as for `args`, as the grammar reads it.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(
+            f"row_filters is {type(value).__name__}, not a list — a row policy that "
+            "does not parse is refused, never read as no filter"
+        )
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"row_filters[{index}] is {type(item).__name__}, not a mapping "
+                "with a handler"
+            )
+        handler = item.get("handler")
+        if not handler:
+            raise ValueError(f"row_filters[{index}] names no handler")
+        args = item.get("args")
+        if args is not None and not isinstance(args, dict):
+            raise ValueError(
+                f"row_filters[{index}] ({handler}) args is {type(args).__name__}, "
+                "not a mapping"
+            )
+        if (
+            args is None
+            and handler not in LAYER_HANDLERS
+            and item.get("binds", DEFAULT_ROW_FILTER_BINDS) == "person"
+        ):
+            raise ValueError(
+                f"row_filters[{index}] ({handler}) binds a person and declares no "
+                "args — it has no column to narrow on"
+            )
+    return [
+        {k: v for k, v in item.items() if not (k == "args" and v is None)}
+        for item in value
+    ]
 
 
 class GovernanceResolver:
@@ -171,28 +218,20 @@ class GovernanceResolver:
             (data.get("governance") if "governance" in data else data) or {}
         )
 
-        # **A malformed filter is dropped, not raised on.** Upstream keeps
-        # `list[dict]` and lets pydantic refuse a non-dict entry; ds types the list,
-        # so validating the raw value would turn one bad entry into a file that does
-        # not load at all. Filtering here keeps the tolerance ds has always had.
+        # **A malformed filter is refused, never dropped.** This used to filter
+        # them out, to keep one bad entry from failing the whole file — and a
+        # dropped filter reads as no filter: a person filter written without
+        # `args` disappeared, the dataset was then ungated, and the data plane
+        # served it whole while `check_consent_coherence` saw nothing to report.
+        # The same drop swallowed every `allow_all`/`deny_all` stated on the
+        # person layer, so a `deny_all` there served. The file now fails to
+        # load, naming the entry (`_check_row_filter_items`).
         #
         # Every argument survives, not just `column` — the handler named in the
         # entry is the only thing that knows which of them it needs, and it runs in
         # the data plane. `RowFilterArgs` is `extra="allow"` for that reason.
-        #
-        # A filter binding an organization may omit `args` (`member_wide` takes
-        # none); a person filter without them is dropped exactly as before.
         if "row_filters" in block:
-            block["row_filters"] = [
-                f
-                for f in (block["row_filters"] or [])
-                if isinstance(f, dict)
-                and f.get("handler")
-                and (
-                    isinstance(f.get("args"), dict)
-                    or ("args" not in f and f.get("binds") == "organization")
-                )
-            ]
+            block["row_filters"] = _check_row_filter_items(block["row_filters"])
 
         # ── One block, and it is the canonical one ──────────────────────────
         # `celine-utils/schema/governance.schema.json` puts purpose, consent and

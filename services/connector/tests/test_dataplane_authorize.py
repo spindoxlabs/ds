@@ -369,6 +369,47 @@ ORGANIZATION_RULES = {
     ORG_WIDE: {"row_filters": [{"handler": "member_wide", "binds": "organization"}]},
 }
 
+# The two-layer row policy: each layer stated, `allow_all` / `deny_all` where a
+# layer narrows nothing or admits nothing (celine-utils `LAYER_HANDLERS`).
+ORG_MATCH_STATED = "datasets.gold.example_dso_feeders_stated"
+BOTH_ALLOW = "datasets.gold.example_reference"
+PERSON_DENIED = "datasets.gold.example_withheld"
+ORGANIZATION_DENIED = "datasets.silver.example_withheld_readings"
+ORGANIZATION_RULES.update(
+    {
+        ORG_MATCH_STATED: {
+            "row_filters": [
+                {"handler": "allow_all", "binds": "person"},
+                {
+                    "handler": "organization_match",
+                    "binds": "organization",
+                    "args": {"column": "dso_id"},
+                },
+            ]
+        },
+        BOTH_ALLOW: {
+            "row_filters": [
+                {"handler": "allow_all", "binds": "person"},
+                {"handler": "allow_all", "binds": "organization"},
+            ]
+        },
+        PERSON_DENIED: {
+            "row_filters": [
+                {"handler": "deny_all", "binds": "person"},
+                {"handler": "allow_all", "binds": "organization"},
+            ]
+        },
+        ORGANIZATION_DENIED: {
+            "classification": "pii",
+            "row_filters": [
+                {"handler": "rec_registry", "args": {"column": "device_id"}},
+                {"handler": "deny_all", "binds": "organization"},
+            ],
+            "dataspace": {"consent_required": True},
+        },
+    }
+)
+
 
 @pytest.fixture
 def _organization_datasets(monkeypatch):
@@ -435,6 +476,46 @@ async def test_a_member_wide_filter_is_carried_too(engine, client):
     assert row_filter["principals"] == []
     assert row_filter["keys"] == []
     assert row_filter["subject_dids"] == []
+
+
+@pytest.mark.rule("X-17", "X-19")
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_organization_datasets")
+async def test_a_person_layer_allow_all_does_not_gate_the_dataset(engine, client):
+    """`allow_all` on the person layer is no consent signal: the organization
+    filter still travels, exactly as for a dataset declaring no person layer."""
+    body = await _authorize_ungated(engine, client, ORG_MATCH_STATED)
+    assert body["decision"] == "allow"
+    row_filter = body["datasets"][0]["row_filter"]
+    assert row_filter["handler"] == "organization_match"
+    assert row_filter["principals"] == []
+
+
+@pytest.mark.rule("X-19")
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_organization_datasets")
+async def test_two_allow_all_layers_carry_no_filter(engine, client):
+    """A verdict is not a filter: nothing goes in the `row_filter` slot, and the
+    data plane applies its own declaration of the two layers."""
+    body = await _authorize_ungated(engine, client, BOTH_ALLOW)
+    assert body["decision"] == "allow"
+    assert body["datasets"][0]["row_filter"] is None
+
+
+@pytest.mark.rule("X-19")
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_organization_datasets")
+@pytest.mark.parametrize("dataset_id", [PERSON_DENIED, ORGANIZATION_DENIED])
+async def test_a_deny_all_layer_denies_the_dataset(engine, client, dataset_id):
+    """Either layer; before consent is looked at (`ORGANIZATION_DENIED` is
+    consent-gated and nobody consented — the answer still names the policy)."""
+    body = await _authorize_ungated(engine, client, dataset_id)
+    assert body["decision"] == "deny"
+    (verdict,) = body["datasets"]
+    assert verdict["decision"] == "deny"
+    assert verdict["reason"] == "row_policy_denied"
+    assert verdict["row_filter"] is None
+    assert verdict["organizations"] is None
 
 
 # ── the joined query ─────────────────────────────────────────────────────────

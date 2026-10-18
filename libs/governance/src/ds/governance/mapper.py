@@ -775,11 +775,12 @@ class GovernanceMapper:
                 f"{pfx}:userFilterColumn": subject_column(rule),
                 # Person filters only: they describe what a consent narrows. An
                 # organization filter is the provider platform's own access
-                # control and says nothing a counterparty can rely on.
+                # control and says nothing a counterparty can rely on, and a
+                # layer verdict (`allow_all`/`deny_all`) narrows nothing.
                 f"{pfx}:rowFilters": [
                     {"handler": f.handler, "column": f.args.column}
                     for f in rule.row_filters
-                    if f.binds_person
+                    if f.narrows_person
                 ]
                 or None,
                 # `GOV-14`. Parsed, merged through overlays and read by nothing

@@ -3,12 +3,15 @@
 doctor's `<p> catalogue` row, plus `local:publish`'s read-back).
 
 Reads `/provider/assets` as this participant's organisation client (it holds
-`connector.provider.read` by default) and compares the number of assets with the
-number of datasets the mounted governance exposes, through the connector's own
-`load_exposed_datasets` — the function the sync publishes from. Empty fails; so
-does a leftover asset the governance no longer names (more) and a dataset the
-sync refused (fewer). It compares counts, not ids: an id swap of equal size
-passes, and the sync Job's own `errors` check covers that.
+`connector.provider.read` by default) and compares the asset ids offered with the
+ids of the datasets the mounted governance exposes, through the connector's own
+`load_exposed_datasets` — the function the sync publishes from — and
+`asset_id_for`, which names each asset. **The two must match, and that is the
+whole test**: an asset the governance does not expose (a leftover, or exposed by
+nobody's decision) fails, and so does an exposed dataset the sync did not
+publish. Nothing exposed and nothing offered is a correct state, not a failure —
+a deployment can offer nothing on purpose (an empty catalogue failed this test
+until 2026-10-18, whatever the configuration said).
 */}}
 {{- $provider := has .Values.participant.role (list "provider" "both") }}
 {{- if and .Values.tests.enabled $provider (include "conn.governanceConfigMap" .) }}
@@ -16,6 +19,7 @@ passes, and the sync Job's own `errors` check covers that.
 import os, sys
 import httpx
 from connector.services.governance import load_exposed_datasets
+from ds.governance.mapper import asset_id_for
 
 verify = os.environ["TEST_TLS_VERIFY"] == "true"
 token = httpx.post(
@@ -36,16 +40,23 @@ r = httpx.get(
 )
 if r.status_code != 200:
     sys.exit(f"GET /provider/assets answered {r.status_code}: {r.text[:300]}")
-assets = r.json()
-expected = load_exposed_datasets(
+offered = {a.get("@id") or a.get("id") for a in r.json()}
+exposed = load_exposed_datasets(
     os.environ["CONNECTOR_GOVERNANCE_YAML_PATH"],
     overlay_name=os.environ.get("CONNECTOR_GOVERNANCE_OVERLAY_NAME") or None,
 )
-print(f"catalogue: {len(assets)} asset(s); governance exposes {len(expected)}")
-if not assets:
-    sys.exit("the catalogue is empty — governance is mounted and nothing is published")
-if len(assets) != len(expected):
-    sys.exit("the catalogue does not match the governance: a leftover asset, or a dataset the sync refused")
+expected = {asset_id_for(key, rule) for key, rule in exposed.items()}
+print(f"catalogue: {len(offered)} asset(s) offered; governance exposes {len(expected)}")
+unexpected = sorted(str(i) for i in offered - expected)
+missing = sorted(expected - offered)
+if unexpected:
+    print("offered, not exposed by the governance: " + ", ".join(unexpected))
+if missing:
+    print("exposed by the governance, not offered: " + ", ".join(missing))
+if unexpected or missing:
+    sys.exit("the catalogue does not match the governance")
+if not expected:
+    print("nothing exposed, nothing offered — as configured")
 ` }}
 {{- $env := include "conn.env" . | fromYamlArray }}
 {{- $env = append $env (dict "name" "TEST_CONNECTOR_URL" "value" (printf "http://%s:%v" (include "ds.fullname" .) .Values.service.port)) }}

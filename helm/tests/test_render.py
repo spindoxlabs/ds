@@ -191,6 +191,29 @@ def test_the_sync_job_asks_the_organisation_client_for_the_publish_grant(
             assert "SYNC_SCOPE" not in env, job["metadata"]["name"]
 
 
+def test_the_catalogue_test_matches_ids_and_accepts_an_empty_catalogue(
+    provider_with_governance_render: list[dict],
+) -> None:
+    """D42: the `catalogue` helm test proves the governance against what is
+    offered — the asset ids must match; nothing exposed and nothing offered is a
+    configured state and passes. *Red:* compare counts again, or refuse an empty
+    catalogue whatever the governance says."""
+    pods = [
+        obj
+        for obj in provider_with_governance_render
+        if obj["kind"] == "Pod" and obj["metadata"]["name"].endswith("-test-catalogue")
+    ]
+    assert pods, "no catalogue test pod rendered"
+    for pod in pods:
+        script = " ".join(
+            " ".join((c.get("command") or []) + (c.get("args") or []))
+            for c in pod["spec"]["containers"]
+        )
+        assert "asset_id_for" in script, pod["metadata"]["name"]
+        assert "offered - expected" in script and "expected - offered" in script
+        assert "the catalogue is empty" not in script, pod["metadata"]["name"]
+
+
 def _chart_of(obj: dict) -> str:
     labels = (obj.get("metadata") or {}).get("labels") or {}
     return labels.get("helm.sh/chart", "")

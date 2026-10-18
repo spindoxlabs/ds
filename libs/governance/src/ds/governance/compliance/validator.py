@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import yaml
+from celine.governance.check import ERROR, WARNING, check_governance
 
 from ..mapper import GovernanceMapper
 from ..models import OdrlProfile, load_odrl_profile
@@ -116,6 +120,64 @@ def build_recipient_lookup(
 build_controller_lookup = build_recipient_lookup
 
 
+#: What `celine.governance.check` contributes, as ds reports it: its rule names
+#: under one prefix, so a reader can tell the platform's rules from ds's own.
+UPSTREAM_CHECKS = (
+    "governance-schema",
+    "governance-row-policy",
+    "governance-handler",
+    "governance-layer-verdict",
+)
+
+#: Upstream rules ds does not repeat. `consent-coherence` is ds's own check,
+#: ported upstream (celine-utils rule 5); ds keeps the original, which has arms
+#: the port does not, and reporting both would say every finding twice.
+_UPSTREAM_SKIPPED = frozenset({"consent-coherence"})
+
+
+def check_upstream(
+    result: ValidationResult, governance_path: Path, overlay_name: str | None
+) -> None:
+    """Run `celine.governance.check` over the file exactly as ds will read it.
+
+    The platform's rules first (celine-utils ≥ 2.7): the published JSON schema
+    with unknown keys, the two-layer row policy, the handler names and the layer
+    verdicts — on the **materialized** file, base plus the overlay ds merges.
+
+    Run on a copy because the two resolve the overlay differently: ds takes the
+    name given or `GOVERNANCE_OVERLAY_NAME`, upstream's checker the variable or
+    the name of the directory holding the file. Copied into a directory named
+    after ds's overlay (or a name no overlay has), upstream merges exactly the
+    overlay ds merges, never a neighbour ds would not read. Findings name the
+    original files. Deployment plugins are not known here, so a handler finding
+    for one is upstream's, reported as it reports it.
+    """
+    name = overlay_name or os.getenv("GOVERNANCE_OVERLAY_NAME")
+    overlay = governance_path.parent / f"governance.{name}.yaml" if name else None
+    with tempfile.TemporaryDirectory(prefix="ds-governance-") as scratch:
+        directory = Path(scratch) / (name or "_no_overlay_")
+        directory.mkdir()
+        copies = {directory / "governance.yaml": governance_path}
+        shutil.copyfile(governance_path, directory / "governance.yaml")
+        if overlay is not None and overlay.is_file():
+            target = directory / f"governance.{name}.yaml"
+            shutil.copyfile(overlay, target)
+            copies[target] = overlay
+        report = check_governance([directory / "governance.yaml"])
+
+    originals = {str(copy): str(original) for copy, original in copies.items()}
+    for finding in report.findings:
+        if finding.rule in _UPSTREAM_SKIPPED:
+            continue
+        source = originals.get(finding.source, finding.source)
+        message = f"{finding.detail} ({source})"
+        check = f"governance-{finding.rule}"
+        if finding.severity == ERROR:
+            result.error(check, message, finding.dataset)
+        elif finding.severity == WARNING:
+            result.warning(check, message, finding.dataset)
+
+
 def validate(
     governance_path: Path,
     *,
@@ -145,11 +207,13 @@ def validate(
     offer's purpose, datasets, recipient, legal basis and codes.
     """
     result = ValidationResult(governance_path=str(governance_path))
-    result.checks = list(CHECKS) + list(CONSENT_CHECKS)
+    result.checks = list(UPSTREAM_CHECKS) + list(CHECKS) + list(CONSENT_CHECKS)
 
     if not governance_path.exists():
         result.error("governance-file", f"Missing governance file: {governance_path}")
         return result
+
+    check_upstream(result, governance_path, overlay_name)
 
     try:
         resolver = GovernanceResolver.from_file_with_override(
@@ -157,6 +221,12 @@ def validate(
         )
     except yaml.YAMLError as exc:
         result.error("governance-file", f"Governance file is not valid YAML: {exc}")
+        return result
+    except ValueError as exc:
+        # A malformed row filter, among others: the resolver refuses the file
+        # rather than reading the entry as no filter. Reported, not raised — the
+        # gate answers "which file, which entry", a traceback does not.
+        result.error("governance-file", f"Governance file does not load: {exc}")
         return result
 
     if not resolver.config.sources:

@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 138 |
 | …of those, **evidenced by a test that names them** | 138 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1204 |
+| Test nodes declaring a rule | 1211 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -80,7 +80,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `X-14` | Declared | · consistent | — | — |
 | `X-15` | Declared | · consistent | — | — |
 | `X-16` | Declared | · consistent | — | — |
-| `X-17` | Enforced | ✅ evidenced | unit×5 | `services/connector/tests/test_dataplane_authorize.py::test_an_ungated_dataset_keeps_its_organization_filter`, `services/connector/tests/test_dataplane_authorize.py::test_a_member_wide_filter_is_carried_too`, `services/connector/tests/test_dataplane_row_filter_binds.py::test_the_organization_filter_is_found_whatever_its_position` +2 more |
+| `X-17` | Enforced | ✅ evidenced | unit×7 | `services/connector/tests/test_dataplane_authorize.py::test_an_ungated_dataset_keeps_its_organization_filter`, `services/connector/tests/test_dataplane_authorize.py::test_a_member_wide_filter_is_carried_too`, `services/connector/tests/test_dataplane_authorize.py::test_a_person_layer_allow_all_does_not_gate_the_dataset` +4 more |
 | `X-18` | Enforced | ✅ evidenced | unit×12 | `services/connector/tests/test_consumer_organization.py::test_the_provider_records_the_presented_organisation`, `services/connector/tests/test_consumer_organization.py::test_the_consumer_side_records_nothing`, `services/connector/tests/test_consumer_organization.py::test_two_presented_organisations_record_none` +9 more |
 
 ### `data-models.md`
@@ -154,8 +154,8 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-1` | Declared | · consistent | — | — |
 | `D-2` | Enforced | ✅ evidenced | unit×8 | `services/connector/tests/test_access_request_declaration.py::test_justification_ref_rejects_an_email`, `services/connector/tests/test_access_request_declaration.py::test_justification_ref_accepts_an_opaque_reference`, `services/connector/tests/test_acting_principal.py::test_the_act_names_a_human_pseudonymously` +5 more |
 | `D-3` | Declared | · consistent | — | — |
-| `D-3a` | Enforced | ✅ evidenced | unit×7 | `libs/governance/tests/tests/test_consent_gate.py::test_the_mapper_spelling_is_the_same_object_not_a_second_copy`, `libs/governance/tests/tests/test_consent_gate.py::test_each_signal_alone_gates_and_names_itself`, `libs/governance/tests/tests/test_consent_gate.py::test_every_signal_is_collected_not_short_circuited` +4 more |
-| `D-3b` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_filters_without_a_personal_declaration_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_the_legacy_filter_spelling_is_caught_too`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_either_declaration_makes_the_filters_coherent` +1 more |
+| `D-3a` | Enforced | ✅ evidenced | unit×9 | `libs/governance/tests/tests/test_consent_gate.py::test_the_mapper_spelling_is_the_same_object_not_a_second_copy`, `libs/governance/tests/tests/test_consent_gate.py::test_each_signal_alone_gates_and_names_itself`, `libs/governance/tests/tests/test_consent_gate.py::test_every_signal_is_collected_not_short_circuited` +6 more |
+| `D-3b` | Enforced | ✅ evidenced | unit×6 | `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_filters_without_a_personal_declaration_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_the_legacy_filter_spelling_is_caught_too`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_either_declaration_makes_the_filters_coherent` +3 more |
 | `D-4` | Enforced | ✅ evidenced | unit×2 | `services/connector/tests/test_consent_vocabulary.py::TestSharingOffersEndpoint::test_contract_based_offer_is_flagged_as_disclosure`, `services/connector/tests/test_consent_vocabulary.py::TestOfferDrivenShares::test_contract_based_offer_cannot_be_toggled` |
 | `D-5` | Enforced | ✅ evidenced | e2e×3, unit×6 | `chain-partner`, `chain-unbundling`, `uc1` +6 more |
 | `D-6` | Declared | · consistent | — | — |
@@ -170,7 +170,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-12b` | Enforced | ✅ evidenced | unit×34 | `libs/governance/tests/tests/test_sharing.py::test_key_assertion_shorthand_requires_every_method`, `libs/governance/tests/tests/test_sharing.py::test_key_assertion_refuses_a_plain_offline_method`, `libs/governance/tests/tests/test_sharing.py::test_key_assertion_required_with_no_method_is_refused` +31 more |
 | `D-13` | Enforced | ✅ evidenced | e2e×1, unit×10 | `onboarding-seam`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_offer_drift.py::test_no_recorded_consent_is_never_drift` +8 more |
 | `D-14` | Enforced | ✅ evidenced | e2e×7, unit×36 | `chain-community`, `chain-partner`, `collector-holder` +40 more |
-| `D-15` | Enforced | ✅ evidenced | e2e×1, unit×21 | `wildcard-admission`, `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard` +19 more |
+| `D-15` | Enforced | ✅ evidenced | e2e×1, unit×22 | `wildcard-admission`, `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard` +20 more |
 | `D-15a` | Enforced | ✅ evidenced | unit×10 | `services/connector/tests/test_consent_provisioning.py::test_decided_at_is_the_authorising_row_not_the_latest_one`, `services/connector/tests/test_consent_provisioning.py::test_a_dataset_wide_withdrawal_denies_every_offer`, `services/connector/tests/test_consent_provisioning.py::test_a_blanket_withdrawal_closes_an_earlier_per_party_grant` +7 more |
 | `D-15b` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_consent_provisioning.py::test_audience_omits_a_subject_who_opted_out_of_this_consumer` |
 | `D-15c` | Enforced | ✅ evidenced | e2e×1, integration×2, unit×26 | `collector-holder`, `services/connector/tests/integration/test_stacked_withdrawals_on_postgres.py::test_a_member_s_withdrawal_over_a_collector_s_is_a_second_row`, `services/connector/tests/integration/test_stacked_withdrawals_on_postgres.py::test_the_member_first_then_a_collector_two_rows_and_the_member_s_presented` +26 more |

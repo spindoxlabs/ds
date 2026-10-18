@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 from pathlib import Path
 
 import yaml
@@ -45,8 +45,16 @@ from celine.governance.models import GovernanceOwner as GovernanceOwner
 from celine.governance.models import GovernanceRule as GovernanceRule
 from celine.governance.models import OntologyConfig as OntologyConfig
 from celine.governance.models import TemporalCoverage as TemporalCoverage
-from celine.governance import DEFAULT_ROW_FILTER_BINDS, row_filter_binds
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from celine.governance import DEFAULT_ROW_FILTER_BINDS, LAYER_HANDLERS, row_filter_binds
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +92,12 @@ class RowFilter(BaseModel):
     A person filter must carry `args.column`, as before `binds` existed: absent, the
     file fails to load. A blank one loads and `check_consent_coherence` errors on
     it. An organization filter may name none.
+
+    **`allow_all` / `deny_all` are a layer's verdict, not a filter** (celine-utils
+    `LAYER_HANDLERS`): the layer `binds` names admits every row or none. Neither
+    narrows by a column, so neither names one, and neither is per-subject access
+    control — a person layer declared `allow_all` says no person is behind these
+    rows, which is the opposite of a consent signal (`narrows_person`).
     """
 
     handler: str
@@ -94,9 +108,37 @@ class RowFilter(BaseModel):
     def binds_person(self) -> bool:
         return self.binds == "person"
 
+    @property
+    def is_layer_verdict(self) -> bool:
+        """`allow_all` or `deny_all`: decides the whole layer, filters on nothing."""
+        return self.handler in LAYER_HANDLERS
+
+    @property
+    def narrows_person(self) -> bool:
+        """A filter that narrows rows to data subjects — the only consent signal."""
+        return self.binds_person and not self.is_layer_verdict
+
+    @model_serializer(mode="wrap")
+    def _a_verdict_keeps_its_binds(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """A layer verdict always writes `binds`, `exclude_defaults` or not.
+
+        `person` is the field's default, so a dump that drops defaults wrote
+        `allow_all` on the person layer as a bare `{handler: allow_all}` — which
+        upstream then refuses on re-read (a verdict must state its layer). For a
+        verdict `binds` is never a default: it is the only thing saying which
+        layer is decided. A deployment's governance assembly dumps resolved
+        rules that way and failed on exactly this.
+        """
+        data = handler(self)
+        if self.is_layer_verdict:
+            data["binds"] = self.binds
+        return data
+
     @model_validator(mode="after")
     def _a_person_filter_names_its_column(self) -> "RowFilter":
-        if self.binds_person and self.args.column is None:
+        if self.narrows_person and self.args.column is None:
             raise ValueError(
                 f"row filter '{self.handler}' binds a person and names no args.column"
             )

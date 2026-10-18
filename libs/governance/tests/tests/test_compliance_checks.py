@@ -28,8 +28,13 @@ BASE_URL = "https://provider.example.org"
 def write_governance(
     tmp_path: Path, config: dict, name: str = "governance.yaml"
 ) -> Path:
+    """Write a governance file; `defaults:` is added empty when a test omits it.
+
+    The published schema requires the root key (`celine.governance.check`, which
+    `validate` runs first), and a test about one of ds's checks is not about it.
+    """
     path = tmp_path / name
-    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    path.write_text(yaml.safe_dump({"defaults": {}, **config}), encoding="utf-8")
     return path
 
 
@@ -91,7 +96,7 @@ class TestGovernanceFile:
         path = write_governance(tmp_path, {"defaults": {"access_level": "open"}})
         result = run(path)
         assert not result.passed
-        assert "declares no sources" in result.errors[0].message
+        assert any("declares no sources" in e.message for e in result.errors)
 
     def test_nothing_exposed_warns_and_stops(self, tmp_path: Path):
         path = write_governance(
@@ -137,13 +142,17 @@ class TestEnums:
         )
         assert "access-level" not in codes(run(path).errors)
 
-    def test_unknown_classification_only_warns(self, tmp_path: Path):
+    def test_unknown_classification_warns_here_and_the_schema_refuses_it(
+        self, tmp_path: Path
+    ):
+        """ds's own check only warns; the published schema's enum is the shape's
+        authority (`ADR-0013`), and `validate` runs it first."""
         path = write_governance(
             tmp_path, {"sources": {"a": exposed_dataset(classification="purple")}}
         )
         result = run(path)
-        assert result.passed
         assert "classification" in codes(result.warnings)
+        assert codes(result.errors) == {"governance-schema"}
 
 
 class TestIdentifierCollisions:
@@ -514,7 +523,13 @@ class TestOwners:
     def test_unresolvable_alias_is_an_error(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(ownership=[{"name": "ghost-org"}])}},
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        ownership=[{"name": "ghost-org", "type": "DATA_OWNER"}]
+                    )
+                }
+            },
         )
         result = run(path, owners=registry)
         assert not result.passed
@@ -524,14 +539,26 @@ class TestOwners:
     def test_resolvable_alias_passes(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(ownership=[{"name": "example-org"}])}},
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        ownership=[{"name": "example-org", "type": "DATA_OWNER"}]
+                    )
+                }
+            },
         )
         assert run(path, owners=registry).passed
 
     def test_registry_alias_resolves(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(ownership=[{"name": "example"}])}},
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        ownership=[{"name": "example", "type": "DATA_OWNER"}]
+                    )
+                }
+            },
         )
         assert "owner-resolvable" not in codes(run(path, owners=registry).errors)
 
@@ -539,7 +566,13 @@ class TestOwners:
         """Without a registry the check is skipped, not silently passed as an error."""
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(ownership=[{"name": "ghost-org"}])}},
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        ownership=[{"name": "ghost-org", "type": "DATA_OWNER"}]
+                    )
+                }
+            },
         )
         result = run(path, owners=None)
         assert "owner-resolvable" not in codes(result.errors)
@@ -553,7 +586,13 @@ class TestOwners:
     def test_owner_did_not_a_participant_warns(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(ownership=[{"name": "example-org"}])}},
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        ownership=[{"name": "example-org", "type": "DATA_OWNER"}]
+                    )
+                }
+            },
         )
         result = run(path, owners=registry, participant_dids={"did:web:other.test"})
         assert "owner-participant" in codes(result.warnings)
@@ -571,7 +610,13 @@ class TestOwners:
         """
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(ownership=[{"name": "example-org"}])}},
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        ownership=[{"name": "example-org", "type": "DATA_OWNER"}]
+                    )
+                }
+            },
         )
         result = run(path, owners=registry, participant_dids=set())
         assert "owner-participant" in codes(result.warnings)
@@ -581,7 +626,13 @@ class TestOwners:
         nothing, and must not be told its owners are unregistered."""
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(ownership=[{"name": "example-org"}])}},
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        ownership=[{"name": "example-org", "type": "DATA_OWNER"}]
+                    )
+                }
+            },
         )
         result = run(path, owners=registry, participant_dids=None)
         assert "owner-participant" not in codes(result.warnings)
@@ -592,7 +643,13 @@ class TestOwners:
     ):
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(ownership=[{"name": "example-org"}])}},
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        ownership=[{"name": "example-org", "type": "DATA_OWNER"}]
+                    )
+                }
+            },
         )
         result = run(
             path, owners=registry, participant_dids={"did:web:example-org.test"}
@@ -605,8 +662,12 @@ class TestOwners:
             tmp_path,
             {
                 "sources": {
-                    "a": exposed_dataset(ownership=[{"name": "ghost"}]),
-                    "b": exposed_dataset(ownership=[{"name": "ghost"}]),
+                    "a": exposed_dataset(
+                        ownership=[{"name": "ghost", "type": "DATA_OWNER"}]
+                    ),
+                    "b": exposed_dataset(
+                        ownership=[{"name": "ghost", "type": "DATA_OWNER"}]
+                    ),
                 }
             },
         )
@@ -839,7 +900,8 @@ class TestResultSerialization:
             tmp_path, {"sources": {"mine": exposed_dataset(access_level="bogus")}}
         )
         errors = run(path).asdict()["errors"]
-        assert errors[0]["dataset"] == "mine"
+        (access,) = [e for e in errors if e["check"] == "access-level"]
+        assert access["dataset"] == "mine"
 
 
 # ── semantic-model (`M-4`, `M-7`) ─────────────────────────────────────────────
