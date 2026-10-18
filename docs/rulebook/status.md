@@ -16,11 +16,11 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …answered by a **named rule** | 39 |
 | …answered **at page level only** | 120 |
 | …**unassessed** | 531 |
-| Rulebook rules | 169 |
-| …claiming enforcement (`Enforced` / `Partly enforced`) | 137 |
-| …of those, **evidenced by a test that names them** | 137 |
+| Rulebook rules | 170 |
+| …claiming enforcement (`Enforced` / `Partly enforced`) | 138 |
+| …of those, **evidenced by a test that names them** | 138 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1192 |
+| Test nodes declaring a rule | 1204 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -81,6 +81,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `X-15` | Declared | · consistent | — | — |
 | `X-16` | Declared | · consistent | — | — |
 | `X-17` | Enforced | ✅ evidenced | unit×5 | `services/connector/tests/test_dataplane_authorize.py::test_an_ungated_dataset_keeps_its_organization_filter`, `services/connector/tests/test_dataplane_authorize.py::test_a_member_wide_filter_is_carried_too`, `services/connector/tests/test_dataplane_row_filter_binds.py::test_the_organization_filter_is_found_whatever_its_position` +2 more |
+| `X-18` | Enforced | ✅ evidenced | unit×12 | `services/connector/tests/test_consumer_organization.py::test_the_provider_records_the_presented_organisation`, `services/connector/tests/test_consumer_organization.py::test_the_consumer_side_records_nothing`, `services/connector/tests/test_consumer_organization.py::test_two_presented_organisations_record_none` +9 more |
 
 ### `data-models.md`
 

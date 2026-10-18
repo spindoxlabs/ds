@@ -180,6 +180,7 @@ async def _verdict(client, agreement_id: str, dataset_id: str, **body) -> dict:
 # ── the webhook ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_the_provider_records_the_presented_organisation(engine, webhook_client):
     await _finalized(
@@ -194,6 +195,7 @@ async def test_the_provider_records_the_presented_organisation(engine, webhook_c
     assert row.consumer_organization_type == "rec"
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_the_consumer_side_records_nothing(engine, webhook_client):
     """On a consumer the same claims name the provider — not the consumer."""
@@ -211,6 +213,7 @@ async def test_the_consumer_side_records_nothing(engine, webhook_client):
     assert row.consumer_organization_type is None
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_two_presented_organisations_record_none(engine, webhook_client):
     await _finalized(
@@ -224,6 +227,7 @@ async def test_two_presented_organisations_record_none(engine, webhook_client):
     assert row.consumer_organization_id is None
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_nothing_presented_records_none(engine, webhook_client):
     await _finalized(
@@ -236,6 +240,7 @@ async def test_nothing_presented_records_none(engine, webhook_client):
 # ── the verdict ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_the_live_organisation_reaches_the_verdict(
     engine, client, webhook_client, issuer
@@ -264,6 +269,7 @@ async def test_the_live_organisation_reaches_the_verdict(
     ]
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_a_credential_retired_since_serves_no_organisation_rows(
     engine, client, webhook_client, issuer
@@ -282,6 +288,7 @@ async def test_a_credential_retired_since_serves_no_organisation_rows(
     assert verdict["reason"] == "organization_unresolved"
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_an_agreement_with_no_organisation_serves_no_organisation_rows(
     engine, client, webhook_client, issuer
@@ -296,6 +303,7 @@ async def test_an_agreement_with_no_organisation_serves_no_organisation_rows(
     assert issuer[1] == [], "nothing to ask the issuer about"
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_a_declared_org_type_must_match_the_presented_one(
     engine, client, webhook_client, issuer
@@ -314,6 +322,7 @@ async def test_a_declared_org_type_must_match_the_presented_one(
     assert verdict["reason"] == "organization_type_mismatch"
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_a_matching_org_type_passes(engine, client, webhook_client, issuer):
     live, _ = issuer
@@ -330,6 +339,7 @@ async def test_a_matching_org_type_passes(engine, client, webhook_client, issuer
     assert verdict["reason"] is None
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_an_allow_all_organization_layer_needs_no_reason(
     engine, client, webhook_client, issuer
@@ -348,6 +358,7 @@ async def test_an_allow_all_organization_layer_needs_no_reason(
     assert verdict["reason"] is None
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_a_consent_gated_dataset_carries_the_organisation_too(
     engine, client, webhook_client, issuer
@@ -369,6 +380,7 @@ async def test_a_consent_gated_dataset_carries_the_organisation_too(
     assert verdict["organizations"] == [ORGANIZATION]
 
 
+@pytest.mark.rule("X-18")
 @pytest.mark.asyncio
 async def test_a_refusal_carries_no_organisation(
     engine, client, webhook_client, issuer
