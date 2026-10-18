@@ -137,6 +137,13 @@ API asks the connector whether rows may flow.
    to the usernames the data plane joins on (`principals`), gather the typed keys registered
    with their consents (`keys`), and return a row filter. It is refused only when both lists
    are empty; the handler reads the list it knows.
+   Beside the row filter, every allow carries `organizations`: the organization the
+   consumer's presented `OrganizationCredential` named when it agreed (kept on the agreement
+   from the negotiation webhook), confirmed live with the issuer once per request
+   (`/credentials/check`, `claim=organizationId`). A declared `org_type` must equal the
+   presented `organizationType`. When it cannot be established the list is empty and an
+   organization-bound dataset's `reason` says why (`organization_unresolved`,
+   `organization_type_mismatch`); the data plane's organization layer then serves no rows.
 7. **Combine.** The strictest verdict wins, and every refusal shares one response shape so a
    probe cannot distinguish causes.
 8. **Name the release.** An allow carries `decision_ref` — the release link

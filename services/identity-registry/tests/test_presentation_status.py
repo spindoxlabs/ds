@@ -151,6 +151,8 @@ async def test_the_holder_reads_revocation_and_suspension(
 
     def fake(vc, purpose, **kw):
         purposes.append(purpose)
+        # Uncached (D38): never staler than the verifier presented to.
+        assert kw["ttl_seconds"] == 0
         return bits[purpose]
 
     monkeypatch.setattr(user_credentials, "status_bit_set", fake)

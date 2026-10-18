@@ -93,6 +93,13 @@ class ContractAgreementORM(Base):
     agreed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     terminated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     termination_reason: Mapped[str | None] = mapped_column(Text)
+    # The organisation the consumer's presented `OrganizationCredential` names
+    # (`organizationId`, the owner id) and its platform role
+    # (`organizationType`), as EDC verified them at negotiation. Provider side
+    # only; `None` when nothing — or something ambiguous — was presented
+    # (migration 0017).
+    consumer_organization_id: Mapped[str | None] = mapped_column(Text)
+    consumer_organization_type: Mapped[str | None] = mapped_column(Text)
 
 
 class ConsentRequestORM(Base):

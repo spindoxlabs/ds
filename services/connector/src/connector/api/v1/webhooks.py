@@ -214,6 +214,11 @@ async def contract_negotiation_event(
     # so the work is done inline and committed once — calling ``db.begin()``
     # after a read would fail on the already-open transaction.
     if "FINALIZED" in event.type and event.agreement_id:
+        # The agreement names the provider by DID; `participant_id` is a slug.
+        organization_id, organization_type = _consumer_organization(
+            event,
+            is_provider=event.payload.get("providerId") == settings.participant_did,
+        )
         await upsert_agreement(
             session=db,
             agreement_id=event.agreement_id,
@@ -231,6 +236,8 @@ async def contract_negotiation_event(
             # payload: reaching past an accessor is what an unsettled
             # vocabulary looks like from here (EDCL-06).
             dsp_agreement_id=event.dsp_agreement_id,
+            consumer_organization_id=organization_id,
+            consumer_organization_type=organization_type,
         )
     elif "TERMINATED" in event.type and event.agreement_id:
         # A negotiation can terminate after it produced an agreement — a subject
@@ -261,6 +268,34 @@ async def contract_negotiation_event(
             )
 
     return {"status": "ok"}
+
+
+def _consumer_organization(
+    event: ContractNegotiationEvent, *, is_provider: bool
+) -> tuple[str | None, str | None]:
+    """The organisation the consumer presented, when this connector is the provider.
+
+    On the consumer's side the same claims name the **provider**, which is not
+    what the row records, so nothing is kept there. More than one
+    ``organizationId`` is not resolved by picking one: the agreement then names
+    no organisation, and its organization-bound rows stay closed. The type is
+    kept only when it is unambiguous too.
+    """
+    if not is_provider:
+        return None, None
+    ids = event.presented_organization_ids
+    types = event.presented_organization_types
+    if len(ids) != 1:
+        if ids:
+            log.warning(
+                "Agreement %s: the consumer presented %d organisations (%s); "
+                "none is recorded",
+                event.agreement_id,
+                len(ids),
+                ", ".join(ids),
+            )
+        return None, None
+    return ids[0], types[0] if len(types) == 1 else None
 
 
 async def _record_access_request_state(

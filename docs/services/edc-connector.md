@@ -142,6 +142,7 @@ differing by +10000 and a different DID, vault, database and connector URL.
 | `edc.iam.sts.oauth.client.id` / `.client.secret.alias` | the DID / a vault alias | STS credentials |
 | `edc.iam.trusted-issuer.0.id` | `did:web:trust-anchor.dataspaces.localhost` | whose credentials are believed |
 | `edc.iam.dcp.scopes.membership.*` | `MembershipCredential:read` | which credential is requested in a presentation |
+| `edc.iam.dcp.scopes.organization.*` | `OrganizationCredential:read`, `type=default` | the organisation the counterparty acts for; DEFAULT so its claims reach the provider's agreement. EDC refuses a presentation lacking a requested type, so a participant without one exchanges nothing |
 | `edc.iam.did.web.use.https` | `false` in dev, **`true` in production** | DID documents carry the keys every trust decision rests on |
 | `ds.vault.seed.file` | `/config/<role>-vault.properties` | the vault seed. It also holds `ds-connector-callback-key`, the header value EDC sends with the EDR callback (under Helm, `secrets.edcCallbackKey`). **The only thing that puts anything in the vault** — the sole `Vault` on the classpath is EDC's in-memory default. Was `edc.vault.fs.file`, the key EDC's own `vault-filesystem` module reads; still honoured, with a deprecation warning |
 | `edc.transfer.proxy.token.signer/verifier.publickey.alias` | `participant-private-key` | the EDR signing key |

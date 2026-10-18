@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -355,6 +356,13 @@ async def dataplane_authorize(
             if not vocab.purpose_covered([purpose], agreed_purposes):
                 return refuse("purpose_not_agreed", detail=purpose)
 
+    token_provider = getattr(request.app.state, "ir_token_provider", None)
+    # Once per request, not per dataset: the organisation is the consumer's, and
+    # the re-check below is a call to the issuer.
+    organization = await _consumer_organization(
+        agreement, body.consumer_did, settings, token_provider
+    )
+
     datasets = []
     for dataset_id in body.dataset_ids:
         datasets.append(
@@ -365,7 +373,8 @@ async def dataplane_authorize(
                 consumer_did=body.consumer_did,
                 purposes=requested,
                 settings=settings,
-                token_provider=getattr(request.app.state, "ir_token_provider", None),
+                organization=organization,
+                token_provider=token_provider,
                 admitted_wildcard_offers=await _admitted_wildcard_offers(
                     request,
                     settings,
@@ -473,6 +482,88 @@ async def _admitted_wildcard_offers(
     return admitted
 
 
+@dataclass(frozen=True)
+class ConsumerOrganization:
+    """The organisation a consumer acts for, as far as this request can say.
+
+    ``id`` is set only when the agreement recorded one presented
+    `OrganizationCredential` naming it **and** the issuer still holds that
+    credential live for the consumer's DID. ``reason`` says why it is not.
+    """
+
+    id: str | None
+    type: str | None
+    reason: str | None = None
+
+
+#: Row-filter handlers that are a layer's verdict, not a filter on a column.
+_LAYER_VERDICTS = frozenset({"allow_all", "deny_all"})
+
+
+async def _consumer_organization(
+    agreement: dict, consumer_did: str, settings, token_provider=None
+) -> ConsumerOrganization:
+    """The consumer's organisation: what it presented, if still true.
+
+    The agreement holds what the consumer's `OrganizationCredential` said when
+    it agreed (EDC verified it then: signature, trusted issuer, status). A
+    credential can be suspended or revoked afterwards — and a reissue suspends
+    the one presented (rulebook `P-30`) — so each request asks the issuer's
+    register whether that DID still holds a live `OrganizationCredential` with
+    that `organizationId`. Not established → no organisation, never a guess.
+    """
+    from ...services.circle import _holds_credential_claim
+
+    organization_id = agreement.get("consumer_organization_id")
+    organization_type = agreement.get("consumer_organization_type")
+    if not organization_id:
+        return ConsumerOrganization(None, None, "organization_unresolved")
+    live = await _holds_credential_claim(
+        settings.identity_registry_url,
+        consumer_did,
+        {
+            "type": "OrganizationCredential",
+            "claim": "organizationId",
+            "value": organization_id,
+        },
+        token_provider,
+    )
+    if not live:
+        log.info(
+            "dataplane authorize: %s no longer holds a live OrganizationCredential "
+            "for %s",
+            consumer_did,
+            organization_id,
+        )
+        return ConsumerOrganization(None, None, "organization_unresolved")
+    return ConsumerOrganization(organization_id, organization_type)
+
+
+def _organizations_for(
+    rule, organization: ConsumerOrganization | None
+) -> tuple[list[str], str | None]:
+    """The `organizations` a dataset's verdict carries, and why it is empty.
+
+    The PEP applies the dataset's organization layer to this list (celine
+    `dataset-api` GS-13): empty serves no rows on an organization-bound layer.
+    A declared ``org_type`` must equal the presented ``organizationType``
+    exactly — a mismatch empties the list rather than refusing, so the PEP's
+    own declaration still decides what an empty list means. A dataset whose
+    organization layer is a verdict (`allow_all`/`deny_all`) or absent gets the
+    organisation when known and no reason when not: nothing narrows on it.
+    """
+    if organization is None:
+        return [], None
+    spec = _organization_filter_spec(rule)
+    bound = spec is not None and spec["handler"] not in _LAYER_VERDICTS
+    if organization.id is None:
+        return [], (organization.reason if bound else None)
+    declared_type = (spec or {}).get("args", {}).get("org_type") if bound else None
+    if declared_type and declared_type != organization.type:
+        return [], "organization_type_mismatch"
+    return [organization.id], None
+
+
 async def _authorize_dataset(
     db: AsyncSession,
     *,
@@ -481,6 +572,7 @@ async def _authorize_dataset(
     consumer_did: str,
     purposes: list[str],
     settings,
+    organization: ConsumerOrganization | None = None,
     token_provider=None,
     admitted_wildcard_offers: set[str] | None = None,
 ) -> dict:
@@ -489,12 +581,19 @@ async def _authorize_dataset(
     from ...services.consent_service import get_granted_subjects
     from ...services.subject_identities import resolve_usernames
 
+    organizations: list[str] | None = None
+    organization_reason: str | None = None
+
     def verdict(decision: str, reason: str | None = None, row_filter=None) -> dict:
+        allowed = decision == ALLOW
         return {
             "dataset_id": dataset_id,
             "decision": decision,
-            "reason": reason,
+            # An allow's reason says why its organization list is empty, the
+            # only thing an allow can need explaining.
+            "reason": reason if not allowed else (reason or organization_reason),
             "row_filter": row_filter,
+            "organizations": organizations if allowed else None,
         }
 
     if dataset_id != agreement.get("asset_id"):
@@ -504,6 +603,16 @@ async def _authorize_dataset(
         rule = vocab.resolve_dataset(dataset_id)
     except vocab.VocabularyError:
         return verdict(DENY, "dataset_unknown")
+
+    if organization is not None:
+        organizations, organization_reason = _organizations_for(rule, organization)
+        if organization_reason:
+            log.info(
+                "dataplane authorize: %s serves no organization rows: %s",
+                dataset_id,
+                organization_reason,
+                extra={"dataset_id": dataset_id, "reason": organization_reason},
+            )
 
     gate = vocab.consent_gate(rule)
     # **Which declaration gated it, at the point it is used.** The verdict's

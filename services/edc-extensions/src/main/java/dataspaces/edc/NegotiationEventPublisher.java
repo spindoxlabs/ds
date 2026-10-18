@@ -42,6 +42,16 @@ import java.util.Map;
  * {@code contract.negotiation.terminated} becomes
  * {@code CONTRACT_NEGOTIATION_TERMINATED}. The connector matches on the state
  * word within it.
+ *
+ * <p>A finalized event also carries {@code presentedOrganization}: the
+ * {@code organizationId} and {@code organizationType} values of the
+ * {@code OrganizationCredential} the counterparty presented, read from the
+ * agreement's claims. EDC stores on the provider's agreement the claims of the
+ * agreement-verification message, which carries the DEFAULT DCP scopes — so with
+ * {@code OrganizationCredential} a DEFAULT scope the consumer's organisation is
+ * there, verified by EDC (signature, issuer, revocation and suspension). On the
+ * consumer's side the same field names the <em>provider</em>; the connector
+ * keeps it only where it is the provider.
  */
 public class NegotiationEventPublisher implements EventSubscriber {
 
@@ -84,6 +94,7 @@ public class NegotiationEventPublisher implements EventSubscriber {
                 payload.put("consumerId", agreement.getConsumerId());
                 payload.put("providerId", agreement.getProviderId());
                 payload.put("policy", policySnapshot(agreement));
+                payload.put("presentedOrganization", presentedOrganization(agreement));
             }
         }
 
@@ -97,6 +108,22 @@ public class NegotiationEventPublisher implements EventSubscriber {
             monitor.warning("NegotiationEventPublisher: %s for negotiation %s was not delivered"
                 .formatted(wireType(event), event.getContractNegotiationId()));
         }
+    }
+
+    /**
+     * What the counterparty's {@code OrganizationCredential} says, as lists.
+     *
+     * <p>Lists, not one value: a presentation can hold more than one credential
+     * of a type, and deciding which one counts is the connector's call, not a
+     * silent first-wins here. Empty lists when nothing was presented.
+     */
+    static Map<String, Object> presentedOrganization(ContractAgreement agreement) {
+        Map<String, Object> organization = new LinkedHashMap<>();
+        organization.put("organizationId",
+            Credentials.claimValues(agreement.getClaims(), Credentials.ORGANIZATION_CREDENTIAL, "organizationId"));
+        organization.put("organizationType",
+            Credentials.claimValues(agreement.getClaims(), Credentials.ORGANIZATION_CREDENTIAL, "organizationType"));
+        return organization;
     }
 
     /** {@code contract.negotiation.finalized} → {@code CONTRACT_NEGOTIATION_FINALIZED}. */

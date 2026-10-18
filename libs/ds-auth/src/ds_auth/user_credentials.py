@@ -665,15 +665,21 @@ def _fetch_status_list(
     :data:`DEFAULT_STATUS_CACHE_SECONDS`), never beyond the register's own
     ``exp``. Failures are never cached: a register that could not be read is
     asked again on the next request rather than refusing everyone for the TTL.
+
+    ``ttl_seconds=0`` reads the register **now**: the process-wide cache is
+    neither read nor written. A holder deciding what to present asks this way, so
+    it is never staler than the verifier it presents to (decision D38).
     """
     if url in cache:
         return cache[url]
+    ttl = DEFAULT_STATUS_CACHE_SECONDS if ttl_seconds is None else ttl_seconds
     now = time.monotonic()
-    with _STATUS_LOCK:
-        hit = _STATUS_CACHE.get(url)
-    if hit is not None and hit[0] > now:
-        cache[url] = hit[1]
-        return hit[1]
+    if ttl > 0:
+        with _STATUS_LOCK:
+            hit = _STATUS_CACHE.get(url)
+        if hit is not None and hit[0] > now:
+            cache[url] = hit[1]
+            return hit[1]
 
     try:
         req = Request(url, headers={"Accept": "application/vc+jwt"})
@@ -686,7 +692,6 @@ def _fetch_status_list(
         body, issuer=issuer, verify_signature=verify_signature, resolver=resolver
     )
 
-    ttl = DEFAULT_STATUS_CACHE_SECONDS if ttl_seconds is None else ttl_seconds
     if ttl > 0:
         # Never past the register's own expiry: a cached register outliving the
         # signature that vouched for it would be an unsigned one by then.

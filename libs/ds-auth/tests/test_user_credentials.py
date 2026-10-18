@@ -1320,3 +1320,35 @@ def test_an_unreadable_register_raises_rather_than_answering_clear(
             resolver=resolver,
         )
     assert exc.value.status_code == 503
+
+
+def test_a_holder_reading_now_bypasses_the_shared_cache(anchor, resolver, monkeypatch):
+    """`ttl_seconds=0` (decision D38): a register suspended since the last cached
+    read is seen at once, and the fresh read does not refresh the cache either.
+
+    A holder deciding what to present asks this way, so it is never staler than
+    the verifier: a verifier that already sees a bit rejects the whole
+    presentation of a holder that does not.
+    """
+    reachable = "http://trust-anchor.internal"
+    url = f"{reachable}/status/2"
+    fake = FakeRegisters({url: status_list("suspension")})
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+
+    def read(**kw) -> bool | None:
+        return user_credentials.status_bit_set(
+            _held(TWO_REGISTERS),
+            "suspension",
+            register_origin=reachable,
+            issuer=ANCHOR,
+            resolver=resolver,
+            **kw,
+        )
+
+    assert read() is False  # cached, at the default TTL
+    fake.documents[url] = status_list("suspension", set_bits=(INDEX,))
+
+    assert read() is False, "the default reader still answers from its cache"
+    assert read(ttl_seconds=0) is True
+    assert read() is False, "a fresh read leaves the shared cache as it was"
+    assert fake.fetches == [url, url]

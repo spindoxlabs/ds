@@ -69,12 +69,21 @@ a row filter binding an organization (`binds: organization` — `organization_ma
 `member_wide`), the `ALLOW` carries that filter as declared, with no `principals`, `keys` or
 `subject_dids`; of several, the first, since filters AND and a data plane refuses any one it
 cannot apply. Until this was the case the verdict was bare and served every organization's
-rows to any holder of an agreement. ds does not yet say which organization the consumer acts
-for, so the data plane cannot apply the filter and refuses it — the celine `dataset-api`
-answers `403 row_filter_unenforceable`, the mock withholds every row — and such a dataset
-serves **no rows** on the agreement path. That is deliberate and fail-closed; a later step
-will carry the consumer's organization so the filter can be applied. The authorize path logs
-when it carries one, so an empty result can be traced to it.
+rows to any holder of an agreement.
+
+**The consumer's organization travels beside it**, as the verdict's `organizations`. The
+consumer presents its `OrganizationCredential` at negotiation (a DEFAULT DCP scope, so every
+participant must hold one); EDC verifies it and stores it on the provider's agreement; the
+connector keeps its `organizationId` and `organizationType` on the agreement row. Per
+request, the issuer is asked whether that DID still holds a live `OrganizationCredential`
+naming that organization (`/credentials/check`), and a declared `org_type` must equal the
+presented `organizationType`. Any of these failing — nothing presented, two organizations
+presented, the credential suspended or revoked since, the type differing — empties the list
+and names the reason (`organization_unresolved`, `organization_type_mismatch`), and a data
+plane applying an organization filter to an empty list serves **no rows**. The celine
+`dataset-api` applies its own organization layer to the list (its GS-13); a data plane that
+predates `organizations` refuses the filter as before. The authorize path logs when a
+dataset serves no organization rows, so an empty result can be traced to it.
 
 That is worth knowing when reading a decision, because it means the verdict cannot
 distinguish *a producer who considered this and declared it impersonal* from *a producer who

@@ -5,7 +5,9 @@ import org.eclipse.edc.iam.verifiablecredentials.spi.model.VerifiableCredential;
 import org.eclipse.edc.participant.spi.ParticipantAgent;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Reads a claim off the verified credentials EDC already put on the agent.
@@ -51,6 +53,9 @@ public final class Credentials {
     /** The credential type that carries dataspace membership. */
     public static final String MEMBERSHIP_CREDENTIAL = "MembershipCredential";
 
+    /** The credential type that names the organisation a participant acts for. */
+    public static final String ORGANIZATION_CREDENTIAL = "OrganizationCredential";
+
     /** EDC's claim key for the verified credential list. */
     static final String VC_CLAIM = "vc";
 
@@ -66,26 +71,59 @@ public final class Credentials {
      * ({@code CR-4}).
      */
     public static List<String> claimValues(ParticipantAgent agent, String credentialType, String claim) {
+        if (agent == null) {
+            return new ArrayList<>();
+        }
+        return claimValues(agent.getClaims(), credentialType, claim);
+    }
+
+    /**
+     * The same, over a claims map — an agent's, or a {@code ContractAgreement}'s.
+     *
+     * <p><b>Two shapes of one credential.</b> On a live agent {@code vc} holds
+     * {@link VerifiableCredential} objects. An agreement's claims are persisted as
+     * JSON and read back as plain maps (EDC's SQL negotiation store,
+     * {@code claims} column), so the agreement a {@code ContractNegotiationFinalized}
+     * event carries holds {@code Map}s: {@code type} a list, {@code credentialSubject}
+     * a list (or one object) whose claims sit beside {@code id} —
+     * {@code CredentialSubject} serialises them with {@code @JsonAnyGetter}. Both
+     * are read; reading one would make a reloaded agreement look credential-less.
+     */
+    public static List<String> claimValues(Map<String, Object> claims, String credentialType, String claim) {
         List<String> values = new ArrayList<>();
-        if (agent == null || agent.getClaims() == null) {
+        if (claims == null) {
             return values;
         }
-        Object vcClaim = agent.getClaims().get(VC_CLAIM);
+        Object vcClaim = claims.get(VC_CLAIM);
         if (!(vcClaim instanceof Iterable<?> credentials)) {
             return values;
         }
         for (Object item : credentials) {
-            if (!(item instanceof VerifiableCredential credential)) {
-                continue;
-            }
-            if (credential.getType() == null || !credential.getType().contains(credentialType)) {
-                continue;
-            }
-            if (credential.getCredentialSubject() == null) {
-                continue;
-            }
-            for (CredentialSubject subject : credential.getCredentialSubject()) {
-                collect(subject, claim, values);
+            if (item instanceof VerifiableCredential credential) {
+                if (credential.getType() == null || !credential.getType().contains(credentialType)) {
+                    continue;
+                }
+                if (credential.getCredentialSubject() == null) {
+                    continue;
+                }
+                for (CredentialSubject subject : credential.getCredentialSubject()) {
+                    if (subject != null) {
+                        collect(subject.getClaims(), claim, values);
+                    }
+                }
+            } else if (item instanceof Map<?, ?> credential) {
+                if (!Purposes.unwrapList(credential.get("type")).contains(credentialType)) {
+                    continue;
+                }
+                Object subjects = credential.get("credentialSubject");
+                Iterable<?> each = subjects instanceof Iterable<?> list ? list : Collections.singletonList(subjects);
+                for (Object subject : each) {
+                    if (subject instanceof Map<?, ?> map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> flat = (Map<String, Object>) map;
+                        collect(flat, claim, values);
+                    }
+                }
             }
         }
         return values;
@@ -109,11 +147,11 @@ public final class Credentials {
         return types.isEmpty() ? "<no credentials>" : types.toString();
     }
 
-    private static void collect(CredentialSubject subject, String claim, List<String> into) {
-        if (subject == null || subject.getClaims() == null) {
+    private static void collect(Map<String, Object> subjectClaims, String claim, List<String> into) {
+        if (subjectClaims == null) {
             return;
         }
-        for (var entry : subject.getClaims().entrySet()) {
+        for (var entry : subjectClaims.entrySet()) {
             if (!matches(entry.getKey(), claim)) {
                 continue;
             }

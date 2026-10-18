@@ -141,7 +141,8 @@ them, but not all:
 | Concept | Names seen |
 |---|---|
 | the agreement, on a negotiation event | `contractAgreementId` — the id **local to one runtime** |
-| the agreement, shared by both participants | `dspAgreementId` — **not exposed by the model**; the connector reads it out of the raw payload |
+| the agreement, shared by both participants | `dspAgreementId` — `ContractNegotiationEvent.dsp_agreement_id` |
+| the counterparty's presented organisation, on a finalized event | `presentedOrganization.{organizationId,organizationType}` (lists) — `presented_organization_ids` / `_types`; empty from an extension that predates them |
 | the agreement, on a transfer or its callback | `contractId` |
 | the consumer's transfer id, as the provider holds it | `correlationId` — `find_transfer_by_correlation` |
 

@@ -19,6 +19,8 @@ async def upsert_agreement(
     policy_snapshot: dict,
     agreed_at: datetime,
     dsp_agreement_id: str | None = None,
+    consumer_organization_id: str | None = None,
+    consumer_organization_type: str | None = None,
 ) -> ContractAgreementORM:
     result = await session.execute(
         select(ContractAgreementORM).where(
@@ -34,7 +36,11 @@ async def upsert_agreement(
         # provider (migration 0008).
         if dsp_agreement_id and not existing.dsp_agreement_id:
             existing.dsp_agreement_id = dsp_agreement_id
-            await session.flush()
+        # Likewise the presented organisation: only the webhook carries it.
+        if consumer_organization_id and not existing.consumer_organization_id:
+            existing.consumer_organization_id = consumer_organization_id
+            existing.consumer_organization_type = consumer_organization_type
+        await session.flush()
         return existing
     agreement = ContractAgreementORM(
         agreement_id=agreement_id,
@@ -44,6 +50,8 @@ async def upsert_agreement(
         provider_id=provider_id,
         policy_snapshot=policy_snapshot,
         agreed_at=agreed_at,
+        consumer_organization_id=consumer_organization_id,
+        consumer_organization_type=consumer_organization_type,
     )
     session.add(agreement)
     await session.flush()
@@ -94,6 +102,10 @@ async def get_agreement_status(session: AsyncSession, agreement_id: str) -> dict
         # edited after an agreement was signed, and the agreement is what the
         # counterparty accepted.
         "policy_snapshot": agreement.policy_snapshot or {},
+        # What the consumer's presented `OrganizationCredential` said when it
+        # agreed (migration 0017); `None` when not established.
+        "consumer_organization_id": agreement.consumer_organization_id,
+        "consumer_organization_type": agreement.consumer_organization_type,
     }
 
 

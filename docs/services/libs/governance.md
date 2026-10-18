@@ -364,7 +364,7 @@ has readers the connector does not ship with: the celine `dataset-api` in a depl
 | Model | Carries |
 |---|---|
 | `DataplaneDecision` | the envelope — `decision`, `reason`, `agreement_id`, `transfer_id`, `purpose`, `datasets[]`, `cache` |
-| `DatasetVerdict` | one dataset's answer, because a single SQL statement can touch several and the envelope is the strictest of them; its `row_filter` (the person layer: the consenting subjects) and, beside it, `organizations` — the consumer's organizations, what the PEP applies its own organization layer to (optional; accepted before the connector emits it) |
+| `DatasetVerdict` | one dataset's answer, because a single SQL statement can touch several and the envelope is the strictest of them; its `row_filter` (the person layer: the consenting subjects) and, beside it, `organizations` — the consumer's organizations, what the PEP applies its own organization layer to (optional: emitted by the connector from the consumer's presented `OrganizationCredential`; `[]` with a `reason` when it cannot be established) |
 | `DataplaneRowFilter` | `handler`, `args`, `principals`, `subject_dids`, `keys` |
 
 Two properties are the point of it:

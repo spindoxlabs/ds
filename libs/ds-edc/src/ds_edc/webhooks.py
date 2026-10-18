@@ -89,6 +89,36 @@ class ContractNegotiationEvent(BaseModel):
         """
         return self.payload.get("dspAgreementId")
 
+    @property
+    def presented_organization_ids(self) -> list[str]:
+        """``organizationId`` values of the counterparty's presented
+        ``OrganizationCredential`` — the agreement's claims, as EDC verified them.
+
+        On a provider that is the consumer; on a consumer, the provider. Empty
+        when nothing was presented, or from an EDC extension that predates it.
+        """
+        return _strings(self._presented_organization().get("organizationId"))
+
+    @property
+    def presented_organization_types(self) -> list[str]:
+        """``organizationType`` values of the same credential(s)."""
+        return _strings(self._presented_organization().get("organizationType"))
+
+    def _presented_organization(self) -> dict[str, Any]:
+        value = self.payload.get("presentedOrganization")
+        return value if isinstance(value, dict) else {}
+
+
+def _strings(value: Any) -> list[str]:
+    """A list of non-empty strings, de-duplicated in order; anything else is empty."""
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item and item not in out:
+            out.append(item)
+    return out
+
 
 class TransferProcessStartedEvent(BaseModel):
     """The ``TransferProcessStarted`` envelope EDC posts to a callback address.

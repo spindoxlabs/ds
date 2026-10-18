@@ -120,11 +120,21 @@ def types_from_presentation_definition(
 
 
 def holder_status_reader(settings: Settings) -> StatusReader:
-    """Both of the issuer's registers, read as the DID sweep reads one."""
+    """Both of the issuer's registers, read as the DID sweep reads one — but **now**.
+
+    Uncached (decision D38). Every reader caches a register for
+    `DEFAULT_STATUS_CACHE_SECONDS`, EDC's verifier included, and two caches
+    filled at different moments disagree for up to that long after a
+    suspension: a verifier that already sees the bit rejects the whole
+    presentation of a holder that does not. Reading fresh, the holder is never
+    the staler side. Measured on the local stack, 2026-10-18: a reissue's
+    suspended predecessor was still presented 20 s after the suspension because
+    the holder had read the register a minute before.
+    """
     from .did_retirement import register_reader
 
-    revoked = register_reader(settings, "revocation")
-    suspended = register_reader(settings, "suspension")
+    revoked = register_reader(settings, "revocation", ttl_seconds=0)
+    suspended = register_reader(settings, "suspension", ttl_seconds=0)
 
     async def read(credential: Credential) -> bool | None:
         bits = [await revoked(credential), await suspended(credential)]

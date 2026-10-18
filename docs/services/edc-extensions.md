@@ -43,6 +43,12 @@ either side could use to learn a negotiation terminated or a transfer completed;
 internal event router does. The transfer publisher is what makes a *provider* emit
 `DataTransferCompleted` at all — before it, that half of the lifecycle reached the connector
 from nowhere.
+A finalized negotiation also forwards `presentedOrganization`: the `organizationId` and
+`organizationType` of the `OrganizationCredential` the counterparty presented, read from the
+agreement's claims (`Credentials.claimValues` reads both the live `VerifiableCredential`
+objects and the map form an agreement has once EDC's store has read it back). It is the
+consumer's organisation on a provider's agreement, because `OrganizationCredential` is a
+DEFAULT DCP scope; the connector keeps it there only.
 
 **Carries a fork of one upstream EDC class**, `JsonObjectFromPolicyTransformer`, placed under
 the upstream package so it wins on the shaded classpath. The fork fixes multi-valued right

@@ -83,12 +83,16 @@ async def anchor_reader(credential: Credential) -> bool | None:
 
 
 def register_reader(
-    settings: Settings, purpose: str = "revocation"
+    settings: Settings,
+    purpose: str = "revocation",
+    *,
+    ttl_seconds: float | None = None,
 ) -> RevocationReader:
     """On a holder, the issuer's signed register, at the anchor's address.
 
     *purpose* picks the register: the sweep reads ``revocation``; the holder's
-    presentation (`presentation.holder_status_reader`) reads ``suspension`` too.
+    presentation (`presentation.holder_status_reader`) reads ``suspension`` too,
+    with ``ttl_seconds=0`` (uncached, D38). ``None`` is the shared default.
     """
     from ds_auth.user_credentials import get_resolver, status_bit_set
 
@@ -102,6 +106,7 @@ def register_reader(
             register_origin=settings.issuer_base_url,
             issuer=settings.trust_anchor_did,
             resolver=resolver,
+            ttl_seconds=ttl_seconds,
         )
 
     return read
