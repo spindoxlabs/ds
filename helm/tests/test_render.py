@@ -216,6 +216,33 @@ def test_the_catalogue_test_matches_ids_and_accepts_an_empty_catalogue(
         assert "the catalogue is empty" not in script, pod["metadata"]["name"]
 
 
+@pytest.mark.rule("C-23")
+def test_the_sync_job_accepts_an_empty_publish_only_when_nothing_is_exposed(
+    provider_with_governance_render: list[dict],
+) -> None:
+    """The post-upgrade sync hook fails an empty publish only when the governance
+    exposes something: it mounts the governance and reads it as the sync does.
+    Refusing every empty publish failed the upgrade (and its rollback) of a
+    provider that offers nothing on purpose. *Red:* drop the mount, or exit on an
+    empty `synced` whatever the governance says."""
+    jobs = [
+        obj
+        for obj in provider_with_governance_render
+        if obj["kind"] == "Job" and "SYNC_CLIENT_ID" in _container_env(obj)
+    ]
+    assert jobs, "no connector sync job rendered"
+    for job in jobs:
+        spec = job["spec"]["template"]["spec"]
+        script = " ".join(" ".join(c.get("command") or []) for c in spec["containers"])
+        assert "load_exposed_datasets" in script, job["metadata"]["name"]
+        assert "the catalogue is empty" in script and "if exposed:" in script
+        env = _container_env(job)
+        mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
+        assert env["CONNECTOR_GOVERNANCE_YAML_PATH"] == f"{mounts['governance']}/governance.yaml"
+        volumes = {v["name"]: v for v in spec["volumes"]}
+        assert volumes["governance"]["configMap"]["name"] == "gov", job["metadata"]["name"]
+
+
 def _chart_of(obj: dict) -> str:
     labels = (obj.get("metadata") or {}).get("labels") or {}
     return labels.get("helm.sh/chart", "")

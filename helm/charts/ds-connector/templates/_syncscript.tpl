@@ -11,8 +11,11 @@ Three things it does that a `curl … && echo ok` would not:
   dataset failed, in a live deployment, for a fortnight;
 * **it reports what changed**, `withdrawn` included — a sync that takes a dataset
   off offer is an event an operator should see in the job's log;
-* **it fails when the provider published nothing**, because a provider whose
-  governance is mounted and whose catalogue is empty is broken, not idle.
+* **it fails when the provider published nothing while its governance exposes
+  something** — that provider is broken, not idle. Nothing exposed and nothing
+  published is a configured state and passes, as in the `catalogue` test (C-23):
+  a deployment can offer nothing on purpose, and failing it made every upgrade of
+  such a provider fail and roll back.
 */}}
 {{- define "conn.syncScript" -}}
 import json, os, sys, time
@@ -65,6 +68,15 @@ print(json.dumps(body, indent=2))
 if body.get("errors"):
     sys.exit(f"provider sync reported {len(body['errors'])} error(s); nothing is published that this names")
 if not body.get("synced"):
-    sys.exit("provider sync published no dataset — governance is mounted and the catalogue is empty")
+    from connector.services.governance import load_exposed_datasets
+
+    exposed = load_exposed_datasets(
+        os.environ["CONNECTOR_GOVERNANCE_YAML_PATH"],
+        overlay_name=os.environ.get("CONNECTOR_GOVERNANCE_OVERLAY_NAME") or None,
+    )
+    if exposed:
+        sys.exit(f"provider sync published no dataset — the governance exposes {len(exposed)} and the catalogue is empty")
+    print(f"nothing exposed, nothing published — as configured; withdrew {len(body.get('withdrawn') or [])}")
+    sys.exit(0)
 print(f"published {len(body['synced'])}, withdrew {len(body.get('withdrawn') or [])}")
 {{- end -}}

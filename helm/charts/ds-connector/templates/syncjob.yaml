@@ -84,7 +84,26 @@ spec:
               value: "http://{{ include "ds.fullname" . }}:{{ .Values.service.port }}"
             - name: SYNC_TIMEOUT
               value: {{ .Values.sync.timeoutSeconds | quote }}
+            # What the governance exposes, read as the sync and the `catalogue`
+            # test read it: an empty publish is a failure only when this is not
+            # empty (C-23).
+            - name: CONNECTOR_GOVERNANCE_YAML_PATH
+              value: {{ printf "%s/governance.yaml" .Values.governance.mountPath | quote }}
+            {{- with .Values.governance.overlayName }}
+            - name: CONNECTOR_GOVERNANCE_OVERLAY_NAME
+              value: {{ . | quote }}
+            {{- end }}
           securityContext:
             {{- include "ds.containerSecurityContext" . | nindent 12 }}
           {{- include "ds.resources" . | nindent 10 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+            - name: governance
+              mountPath: {{ .Values.governance.mountPath }}
+              readOnly: true
+      volumes:
+        {{- include "ds.tmpVolume" . | nindent 8 }}
+        - name: governance
+          configMap:
+            name: {{ include "conn.governanceConfigMap" . }}
 {{- end }}
