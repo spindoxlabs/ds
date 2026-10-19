@@ -194,7 +194,7 @@ def test_the_sync_job_asks_the_organisation_client_for_the_publish_grant(
 def test_the_catalogue_test_matches_ids_and_accepts_an_empty_catalogue(
     provider_with_governance_render: list[dict],
 ) -> None:
-    """D42: the `catalogue` helm test proves the governance against what is
+    """The `catalogue` helm test proves the governance against what is
     offered — the asset ids must match; nothing exposed and nothing offered is a
     configured state and passes. *Red:* compare counts again, or refuse an empty
     catalogue whatever the governance says."""

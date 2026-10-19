@@ -220,7 +220,7 @@ async def query_presentations(
             requested_types=requested_types,
             audience=grant.verifier_did,
             # A participant's own credentials live in the issuer's registers,
-            # which its copies cannot follow (D27); a person's are this
+            # which its copies cannot follow (P-31); a person's are this
             # registry's own rows, already filtered on their status.
             status_reader=(
                 holder_status_reader(settings)

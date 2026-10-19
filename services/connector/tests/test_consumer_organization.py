@@ -1,6 +1,6 @@
 """The consumer's organisation, from the credential it presented to the verdict.
 
-Plan `an-undeclared-row-policy-denies`, phase 4.3. EDC verifies the consumer's
+Rulebook X-18. EDC verifies the consumer's
 `OrganizationCredential` at negotiation (a DEFAULT DCP scope) and stores it on
 the provider's agreement; `NegotiationEventPublisher` forwards its
 `organizationId`/`organizationType`; the webhook keeps them on the agreement row;

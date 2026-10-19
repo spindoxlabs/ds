@@ -668,7 +668,7 @@ def _fetch_status_list(
 
     ``ttl_seconds=0`` reads the register **now**: the process-wide cache is
     neither read nor written. A holder deciding what to present asks this way, so
-    it is never staler than the verifier it presents to (decision D38).
+    it is never staler than the verifier it presents to (rulebook P-31).
     """
     if url in cache:
         return cache[url]

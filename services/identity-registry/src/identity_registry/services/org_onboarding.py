@@ -668,7 +668,7 @@ async def reinstate_owner(db: AsyncSession, owner: Owner) -> None:
 
     Clears the suspension bits on the credentials the organisation already
     holds — except an OrganizationCredential a reissue replaced, which stays
-    suspended (`_superseded_by_reissue`, D36). No re-issuance: the credential
+    suspended (`_superseded_by_reissue`, P-30). No re-issuance: the credential
     in its wallet is signed, unexpired and unchanged, and it was never revoked
     — only held. Re-minting one here would
     burn a fresh index and leave the holder carrying a credential the register

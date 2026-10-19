@@ -147,7 +147,7 @@ def test_a_verdict_is_not_published_as_a_consent_filter():
 def test_an_organization_bound_dataset_with_a_person_allow_all_is_coherent(
     tmp_path: Path,
 ):
-    """The shape phase 2 gave 21 producer datasets: impersonal, both layers stated."""
+    """An impersonal, organization-bound dataset with both layers stated."""
     path = write_governance(
         tmp_path,
         {"sources": {"a": exposed_dataset(row_filters=[PERSON_ALLOW, ORGANIZATION])}},

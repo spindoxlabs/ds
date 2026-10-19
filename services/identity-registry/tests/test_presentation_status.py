@@ -1,4 +1,4 @@
-"""A holder does not present its own credential once the issuer retired it (D27).
+"""A holder does not present its own credential once the issuer retired it (P-31).
 
 The holder's copy stays ``active`` after the issuer suspends or revokes it — an
 organisation reissue (`P-30`) suspends the predecessor the holder still keeps —
@@ -78,7 +78,7 @@ async def _build(db_session, read):
 @pytest.mark.rule("P-31")
 @pytest.mark.asyncio
 async def test_a_retired_credential_is_left_out(db_session, holder_with_org_credential):
-    """The suspended predecessor a reissue leaves with the holder (D25, D27)."""
+    """The suspended predecessor a reissue leaves with the holder (P-30, P-31)."""
     presented = await _build(
         db_session,
         _reader({"OrganizationCredential": True, "MembershipCredential": False}),
@@ -91,7 +91,7 @@ async def test_a_retired_credential_is_left_out(db_session, holder_with_org_cred
 async def test_an_unreadable_register_leaves_the_credential_out(
     db_session, holder_with_org_credential, caplog
 ):
-    """Fail closed (D27): a smaller presentation, never a possibly retired one."""
+    """Fail closed (P-31): a smaller presentation, never a possibly retired one."""
     presented = await _build(
         db_session,
         _reader(
@@ -151,7 +151,7 @@ async def test_the_holder_reads_revocation_and_suspension(
 
     def fake(vc, purpose, **kw):
         purposes.append(purpose)
-        # Uncached (D38): never staler than the verifier presented to.
+        # Uncached (P-31): never staler than the verifier presented to.
         assert kw["ttl_seconds"] == 0
         return bits[purpose]
 

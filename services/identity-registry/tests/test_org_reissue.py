@@ -4,9 +4,9 @@ An `OrganizationCredential` names the organisation on the platform
 (`organizationId`, the owner's id) and its platform role (`organizationType`,
 `organization.role` in owners.yaml — not the schema.org `type`, not the
 participant `roles`). Organisations already holding a credential get one that
-says so by a **reissue** (D16): a successor issued, delivered to the holder's
+says so by a **reissue**: a successor issued, delivered to the holder's
 store over the Storage API, and only then the predecessor suspended — not
-revoked: it was replaced, not withdrawn (P-30, D25). No enrolment, no
+revoked: it was replaced, not withdrawn (P-30). No enrolment, no
 re-verification, no agreement step.
 """
 
@@ -203,7 +203,7 @@ async def test_reinstating_after_a_reissue_leaves_the_predecessor_suspended(
     """`org suspend` then `org reinstate` must not revive what a reissue replaced.
 
     Suspending the organisation suspends the successor too, so both carry a set
-    bit; reinstating lifts the successor's alone (D36).
+    bit; reinstating lifts the successor's alone (P-30).
     """
     settings = await _seed(db_session, tmp_path)
     old = await _enrolled_with_credential(db_session, settings)

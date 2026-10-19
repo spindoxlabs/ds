@@ -1,6 +1,6 @@
 """an agreement records the organisation its consumer presented
 
-Plan `an-undeclared-row-policy-denies`, phase 4.3. With `OrganizationCredential`
+Rulebook X-18. With `OrganizationCredential`
 a DEFAULT DCP scope, EDC stores the consumer's verified credential on the
 provider's agreement (`ContractAgreement.claims`), and `NegotiationEventPublisher`
 forwards its `organizationId` and `organizationType`. They are kept here because

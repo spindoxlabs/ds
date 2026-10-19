@@ -1,13 +1,13 @@
 """Reissuing an organisation's credential: successor delivered, predecessor suspended.
 
-`ir-cli org reissue` (decision D16). What an `OrganizationCredential` asserts
+`ir-cli org reissue`. What an `OrganizationCredential` asserts
 can grow — `organizationId` and `organizationType` were added after
 organisations already held one — and a credential has no in-place update. The
 DCP answer is a **successor**: issued by the anchor, written to the holder's
 own store over the Storage API exactly as an issuance request's credentials are
 (`issuance.deliver_to_custodian`, here with the organisation as its own
 custodian), and only then the predecessor suspended in the status list
-(`P-30`, decision D25).
+(`P-30`).
 
 **Suspended, not revoked** — as `role_transition.py` retires a superseded
 `DataSubjectCredential` (`P-28`). Revocation says the attestation was withdrawn
@@ -245,7 +245,7 @@ async def reissue_owner(
     outcome.delivered = True
 
     # Delivered: the holder has the successor, so the predecessors can go.
-    # Suspended, not revoked (D25): a superseded credential was replaced, not
+    # Suspended, not revoked (P-30): a superseded credential was replaced, not
     # withdrawn. `revoked_at` is not stamped — a suspension is not an ending.
     for cred_id in predecessors:
         superseded = await db.get(Credential, cred_id, populate_existing=True)

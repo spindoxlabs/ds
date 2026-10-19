@@ -1323,7 +1323,7 @@ def test_an_unreadable_register_raises_rather_than_answering_clear(
 
 
 def test_a_holder_reading_now_bypasses_the_shared_cache(anchor, resolver, monkeypatch):
-    """`ttl_seconds=0` (decision D38): a register suspended since the last cached
+    """`ttl_seconds=0` (rulebook P-31): a register suspended since the last cached
     read is seen at once, and the fresh read does not refresh the cache either.
 
     A holder deciding what to present asks this way, so it is never staler than

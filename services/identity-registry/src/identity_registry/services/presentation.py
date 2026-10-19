@@ -8,7 +8,7 @@ Before this, neither bound applied: the query's scope was not read at all and no
 grant existed, so an empty presentation definition — which is exactly what EDC
 sends — returned every active credential the participant held.
 
-**A retired copy is left out** (decision D27). The holder's copy of its own
+**A retired copy is left out** (rulebook P-31). The holder's copy of its own
 credential stays ``active`` when the issuer suspends or revokes it: DCP has no
 issuer-to-holder message for that (`P-29`), and an organisation reissue
 (`P-30`) suspends the predecessor the holder still keeps. EDC 0.18.0's
@@ -122,7 +122,7 @@ def types_from_presentation_definition(
 def holder_status_reader(settings: Settings) -> StatusReader:
     """Both of the issuer's registers, read as the DID sweep reads one — but **now**.
 
-    Uncached (decision D38). Every reader caches a register for
+    Uncached (P-31). Every reader caches a register for
     `DEFAULT_STATUS_CACHE_SECONDS`, EDC's verifier included, and two caches
     filled at different moments disagree for up to that long after a
     suspension: a verifier that already sees the bit rejects the whole
@@ -183,7 +183,7 @@ async def build_presentation_response(
     *requested_types* narrows further when the query named specific types; an
     empty request means "everything I am entitled to", which is what EDC sends.
     With *status_reader*, a credential retired on its issuer's register, or
-    whose register cannot be read, is left out (D27).
+    whose register cannot be read, is left out (P-31).
     """
     key_result = await db.execute(
         select(Key).where(

@@ -92,7 +92,7 @@ def register_reader(
 
     *purpose* picks the register: the sweep reads ``revocation``; the holder's
     presentation (`presentation.holder_status_reader`) reads ``suspension`` too,
-    with ``ttl_seconds=0`` (uncached, D38). ``None`` is the shared default.
+    with ``ttl_seconds=0`` (uncached, P-31). ``None`` is the shared default.
     """
     from ds_auth.user_credentials import get_resolver, status_bit_set
 

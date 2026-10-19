@@ -543,10 +543,10 @@ read as valid. Deciding it where the state lives is what stops that shape recurr
    path DID is `IDENTITY_REGISTRY_PARTICIPANT_DID`), each of those credentials is checked
    against the issuer's **revocation and suspension registers** first, and one with either
    bit set is left out. The registers are read **fresh** for this, never from the
-   900-second status cache every reader shares (decision D38): a verifier that already sees a
+   900-second status cache every reader shares: a verifier that already sees a
    bit rejects the whole presentation of a holder that does not, so the holder must never be
    the staler side. A register that cannot be read leaves the credential out too, with a
-   warning ([rulebook `P-31`](../rulebook/participation.md), decision D27). The holder's copy stays `active` when the issuer retires it — an
+   warning ([rulebook `P-31`](../rulebook/participation.md)). The holder's copy stays `active` when the issuer retires it — an
    organisation reissue suspends the predecessor the holder keeps (`P-30`) — and EDC 0.18.0
    rejects the **whole** presentation when any credential in it has a set status bit, so one
    retired copy would fail every negotiation. The DCP presentation protocol says a response

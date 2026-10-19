@@ -252,7 +252,7 @@ def build_organization_credential(
         subject["subOrganization"] = sub_organizations
     if dsp_address:
         subject["dspAddress"] = dsp_address
-    # Which organisation this is on the platform, and what kind (decision O6).
+    # Which organisation this is on the platform, and what kind.
     # `organizationId` is the owner's id — the key the platform's own rows and
     # its identity provider's organisation name it by. `organizationType` is the
     # organisation's **platform** role (`organization.role` in owners.yaml):
