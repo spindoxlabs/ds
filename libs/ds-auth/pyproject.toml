@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ds-auth"
-version = "0.5.0"
+version = "0.6.0"
 description = "Shared JWT authentication and unified scope/group authorization for the dataspaces platform"
 requires-python = ">=3.12"
 # Everything imported at module level by `src/ds_auth/**` belongs here, and

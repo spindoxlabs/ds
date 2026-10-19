@@ -2,6 +2,60 @@
 
 <!-- version list -->
 
+## v0.6.0 (2026-10-19)
+
+### Bug Fixes
+
+- An agreement is recorded once whichever writer comes first, so the webhook keeps the shared DSP id
+  ([`6ea3ca5`](https://github.com/spindoxlabs/ds/commit/6ea3ca5643f190204d703c12a04c30f870d948ae))
+
+- Org apply onboards every organisation with a dataspace block, also when nothing is exposed
+  ([`13f5ebe`](https://github.com/spindoxlabs/ds/commit/13f5ebe93907a5affc99d094b7eaf36855f92dda))
+
+- Up lock
+  ([`97e956f`](https://github.com/spindoxlabs/ds/commit/97e956f80d2b77a18ad1fe65fd25c375479ba2be))
+
+### Chores
+
+- Dev seeds name organization types rec, dso, org
+  ([`cf45b45`](https://github.com/spindoxlabs/ds/commit/cf45b450b09f2f901d0526c0ddafa138f2928f64))
+
+### Documentation
+
+- Add X-17, an agreement does not lift an organization row filter
+  ([`6e2b8f7`](https://github.com/spindoxlabs/ds/commit/6e2b8f70211f2453bde62f644fc1a2d2c825616b))
+
+- Add X-18, the consumer's presented organization decides organization rows
+  ([`a4db8eb`](https://github.com/spindoxlabs/ds/commit/a4db8eb4472d1427ed6567d15f7ad3bd17478638))
+
+- Rule ids and plain reasons instead of external references
+  ([`f044bcc`](https://github.com/spindoxlabs/ds/commit/f044bcca990a0424144fc6eb679b03806635116f))
+
+### Features
+
+- Allow_all/deny_all are layer verdicts, a malformed row filter is refused, validate runs the
+  platform rules first
+  ([`61ff792`](https://github.com/spindoxlabs/ds/commit/61ff79268f2d6ddeab833e96d27151b76b6bbf87))
+
+- Force organization level filter on dataplane
+  ([`5f82d43`](https://github.com/spindoxlabs/ds/commit/5f82d43c232b89809c24848a8677dfac6859d5c1))
+
+- Org credential carries organizationId and organizationType; add org reissue cli
+  ([`7e15c8b`](https://github.com/spindoxlabs/ds/commit/7e15c8bea8db31550cd7c1bd84bb57149380e000))
+
+- Org reissue suspends the predecessor; holder omits its own retired credentials (P-30, P-31)
+  ([`e38f73b`](https://github.com/spindoxlabs/ds/commit/e38f73b4c2f32a6b0c7a4821951519e6b01d3276))
+
+- Organization credential as a DEFAULT DCP scope; the verdict carries the consumer's organization
+  ([`3c7f07d`](https://github.com/spindoxlabs/ds/commit/3c7f07d295d323eb0cbb241b3e8882bb80c0a1df))
+
+- Rules P-32, C-22, C-23, X-20 and ADR-0030; e2e flows for the organization layer and the reissue
+  ([`8d2cfcf`](https://github.com/spindoxlabs/ds/commit/8d2cfcf30c738993b9bcf4b214f871715bf311cb))
+
+- The dataplane verdict carries the consumer's organizations
+  ([`b9691fc`](https://github.com/spindoxlabs/ds/commit/b9691fcb39b01342198c577cc73962ecab20895e))
+
+
 ## v0.5.0 (2026-10-16)
 
 ### Documentation
