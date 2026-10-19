@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-10-19 from `f044bcc-dirty`.
+Generated 2026-10-19 from `f33bc67`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 144 |
 | …of those, **evidenced by a test that names them** | 144 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1264 |
+| Test nodes declaring a rule | 1265 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -59,7 +59,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `C-20` | Enforced | ✅ evidenced | e2e×1, unit×4 | `authz-perimeter`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_refuses_a_credential_linked_to_another_participant`, `services/connector/tests/test_dataplane_authorize.py::test_another_consumers_agreement_is_refused` +2 more |
 | `C-21` | Enforced | ✅ evidenced | e2e×1, java×1, unit×9 | `recipient-restriction`, `PolicyRegistrationTest#membershipAndRecipientAreBoundInTheCatalogScope`, `libs/governance/tests/tests/test_mapper.py::test_access_requirements_all_no_membership_constraint` +8 more |
 | `C-22` | Enforced | ✅ evidenced | unit×8 | `libs/governance/tests/tests/test_compliance_checks.py::TestEnums::test_unknown_classification_warns_here_and_the_schema_refuses_it`, `libs/governance/tests/tests/test_validate_upstream.py::test_an_undeclared_layer_is_an_error`, `libs/governance/tests/tests/test_validate_upstream.py::test_both_layers_declared_pass` +5 more |
-| `C-23` | Partly enforced | ✅ evidenced | unit×1 | `helm/tests/test_render.py::test_the_catalogue_test_matches_ids_and_accepts_an_empty_catalogue` |
+| `C-23` | Partly enforced | ✅ evidenced | unit×2 | `helm/tests/test_render.py::test_the_catalogue_test_matches_ids_and_accepts_an_empty_catalogue`, `helm/tests/test_render.py::test_the_sync_job_accepts_an_empty_publish_only_when_nothing_is_exposed` |
 
 ### `data-exchange.md`
 
