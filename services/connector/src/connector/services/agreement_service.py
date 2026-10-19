@@ -5,9 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db.models import ContractAgreementORM
+from ..db.models import ContractAgreementORM, _uuid
 
 
 async def upsert_agreement(
@@ -22,38 +24,49 @@ async def upsert_agreement(
     consumer_organization_id: str | None = None,
     consumer_organization_type: str | None = None,
 ) -> ContractAgreementORM:
-    result = await session.execute(
-        select(ContractAgreementORM).where(
-            ContractAgreementORM.agreement_id == agreement_id
+    """Record an agreement once, whichever writer gets there first — or both at once.
+
+    Two paths write this row — the negotiation webhook and the consumer's negotiation
+    status route — and either can be first. **Or concurrent**: a select-then-insert
+    let both see no row, the second insert violated `agreement_id`'s unique key, and
+    the webhook answered 500 having stored nothing — so the shared DSP id, which only
+    the webhook carries, was lost, the EDR named the local id and the provider
+    answered `agreement_unknown` (seen 2026-10-19 under a driver polling the status
+    route every second). So the row is inserted with `ON CONFLICT DO NOTHING`, then
+    read back and completed: the DSP id and the presented organisation, which only the
+    webhook carries, are filled in late when empty, never overwritten. Without the DSP
+    id the consumer cannot name its own agreement to the provider (migration 0008).
+    """
+    dialect = session.get_bind().dialect.name
+    insert = postgresql_insert if dialect == "postgresql" else sqlite_insert
+    await session.execute(
+        insert(ContractAgreementORM)
+        .values(
+            id=_uuid(),
+            agreement_id=agreement_id,
+            dsp_agreement_id=dsp_agreement_id,
+            asset_id=asset_id,
+            consumer_id=consumer_id,
+            provider_id=provider_id,
+            policy_snapshot=policy_snapshot,
+            agreed_at=agreed_at,
+            consumer_organization_id=consumer_organization_id,
+            consumer_organization_type=consumer_organization_type,
         )
+        .on_conflict_do_nothing(index_elements=["agreement_id"])
     )
-    existing = result.scalar_one_or_none()
-    if existing:
-        # Two paths write this row — the negotiation webhook and the transfer
-        # route — and either can be first. Only the webhook carries the shared
-        # DSP id, so fill it in late rather than losing it to whichever arrived
-        # first. Without this the consumer cannot name its own agreement to the
-        # provider (migration 0008).
-        if dsp_agreement_id and not existing.dsp_agreement_id:
-            existing.dsp_agreement_id = dsp_agreement_id
-        # Likewise the presented organisation: only the webhook carries it.
-        if consumer_organization_id and not existing.consumer_organization_id:
-            existing.consumer_organization_id = consumer_organization_id
-            existing.consumer_organization_type = consumer_organization_type
-        await session.flush()
-        return existing
-    agreement = ContractAgreementORM(
-        agreement_id=agreement_id,
-        dsp_agreement_id=dsp_agreement_id,
-        asset_id=asset_id,
-        consumer_id=consumer_id,
-        provider_id=provider_id,
-        policy_snapshot=policy_snapshot,
-        agreed_at=agreed_at,
-        consumer_organization_id=consumer_organization_id,
-        consumer_organization_type=consumer_organization_type,
-    )
-    session.add(agreement)
+    agreement = (
+        await session.execute(
+            select(ContractAgreementORM)
+            .where(ContractAgreementORM.agreement_id == agreement_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    if dsp_agreement_id and not agreement.dsp_agreement_id:
+        agreement.dsp_agreement_id = dsp_agreement_id
+    if consumer_organization_id and not agreement.consumer_organization_id:
+        agreement.consumer_organization_id = consumer_organization_id
+        agreement.consumer_organization_type = consumer_organization_type
     await session.flush()
     return agreement
 
