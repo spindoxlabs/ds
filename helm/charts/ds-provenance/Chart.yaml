@@ -5,7 +5,7 @@ description: |
   reached by that participant's ds-connector, never exposed publicly.
 type: application
 version: 0.1.0
-appVersion: "0.6.0"
+appVersion: "0.6.1"
 dependencies:
   - name: ds-common
     version: 0.1.0

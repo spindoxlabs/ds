@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.6.1 (2026-10-19)
+
+### Bug Fixes
+
+- **helm**: The connector sync hook accepts an empty publish when nothing is exposed (C-23)
+  ([`c0b0a1e`](https://github.com/spindoxlabs/ds/commit/c0b0a1e8c0a49eadf3b80c34ff8540c16b658f2f))
+
+
 ## v0.6.0 (2026-10-19)
 
 ### Bug Fixes
