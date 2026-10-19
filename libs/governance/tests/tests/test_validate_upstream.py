@@ -25,6 +25,7 @@ def _internal(**overrides) -> dict:
     return exposed_dataset(access_level="internal", **overrides)
 
 
+@pytest.mark.rule("C-22")
 def test_an_undeclared_layer_is_an_error(tmp_path: Path):
     path = write_governance(tmp_path, {"sources": {"a": _internal()}})
     result = run(path)
@@ -34,6 +35,7 @@ def test_an_undeclared_layer_is_an_error(tmp_path: Path):
     assert str(path) in finding.message, "names the original file, not the copy"
 
 
+@pytest.mark.rule("C-22")
 def test_both_layers_declared_pass(tmp_path: Path):
     path = write_governance(
         tmp_path, {"sources": {"a": _internal(row_filters=BOTH_LAYERS)}}
@@ -41,6 +43,7 @@ def test_both_layers_declared_pass(tmp_path: Path):
     assert not {c for c in codes(run(path).errors) if c.startswith("governance-")}
 
 
+@pytest.mark.rule("C-22")
 def test_an_unknown_handler_is_an_error(tmp_path: Path):
     filters = [
         {"handler": "no_such_handler", "args": {"column": "c"}},
@@ -52,6 +55,7 @@ def test_an_unknown_handler_is_an_error(tmp_path: Path):
     assert "governance-handler" in codes(run(path).errors)
 
 
+@pytest.mark.rule("C-22")
 def test_an_unknown_key_is_a_warning(tmp_path: Path):
     path = write_governance(
         tmp_path, {"sources": {"a": exposed_dataset(colour="blue")}}
@@ -61,6 +65,7 @@ def test_an_unknown_key_is_a_warning(tmp_path: Path):
     assert "governance-schema" not in codes(result.errors)
 
 
+@pytest.mark.rule("C-22")
 def test_consent_coherence_is_reported_once(tmp_path: Path):
     """ds's own check, which upstream's rule 5 was ported from; not repeated."""
     filters = [
@@ -75,6 +80,7 @@ def test_consent_coherence_is_reported_once(tmp_path: Path):
     assert "governance-consent-coherence" not in codes(result.errors)
 
 
+@pytest.mark.rule("C-22")
 def test_the_overlay_ds_merges_is_the_one_checked(tmp_path: Path):
     """The overlay completes the row policy: checked materialized, it passes."""
     path = write_governance(tmp_path, {"sources": {"a": _internal()}})
@@ -88,6 +94,7 @@ def test_the_overlay_ds_merges_is_the_one_checked(tmp_path: Path):
     )
 
 
+@pytest.mark.rule("C-22")
 def test_a_neighbour_named_after_the_directory_is_not_merged(tmp_path: Path):
     """Upstream infers an overlay from the directory name; ds never does."""
     directory = tmp_path / "staging"

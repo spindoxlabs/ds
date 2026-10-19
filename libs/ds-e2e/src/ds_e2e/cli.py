@@ -56,6 +56,9 @@ class FlowName(StrEnum):
     organisation_token = "organisation-token"
     collector_holder = "collector-holder"
     holder_keys = "holder-keys"
+    organization_rows = "organization-rows"
+    layer_verdicts = "layer-verdicts"
+    organization_reissue = "organization-reissue"
     fail_closed = "fail-closed"
     # Aggregates
     all = "all"

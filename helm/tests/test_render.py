@@ -17,6 +17,7 @@ import yaml
 from conftest import (
     CHARTS,
     HELM_DIR,
+    REPO_DIR,
     PilotRender,
     _key,
     _render,
@@ -191,6 +192,7 @@ def test_the_sync_job_asks_the_organisation_client_for_the_publish_grant(
             assert "SYNC_SCOPE" not in env, job["metadata"]["name"]
 
 
+@pytest.mark.rule("C-23")
 def test_the_catalogue_test_matches_ids_and_accepts_an_empty_catalogue(
     provider_with_governance_render: list[dict],
 ) -> None:
@@ -235,6 +237,58 @@ def test_every_edc_names_the_management_audience(default_render: list[dict]) -> 
         assert "ds.management.audience=svc-ds-edc" in [p.strip() for p in props], cm[
             "metadata"
         ]["name"]
+
+
+#: The DCP scope asking a counterparty for its `OrganizationCredential` (rulebook
+#: X-18). DEFAULT, so EDC adds it to every DSP message, the agreement verification
+#: included, whose claims it stores on the provider's agreement (ADR-0030).
+ORGANIZATION_SCOPE = (
+    "edc.iam.dcp.scopes.organization.id=organization",
+    "edc.iam.dcp.scopes.organization.type=default",
+    "edc.iam.dcp.scopes.organization.value="
+    "org.eclipse.dspace.dcp.vc.type:OrganizationCredential:read",
+    "edc.iam.dcp.scopes.organization.profile=*",
+)
+
+
+def _properties(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines()]
+
+
+@pytest.mark.rule("X-18")
+def test_every_rendered_edc_asks_for_the_organization_credential(
+    default_render: list[dict],
+) -> None:
+    """Each participant's EDC requests the `organization` scope as DEFAULT. *Red:*
+    drop a line from the ds-edc configmap, or make the scope `policy` — a POLICY
+    scope never reaches the stored agreement, and the connector learns no
+    organisation."""
+    configmaps = [
+        obj
+        for obj in default_render
+        if obj["kind"] == "ConfigMap" and _chart_of(obj).startswith("ds-edc-")
+    ]
+    assert configmaps, "no ds-edc ConfigMap rendered"
+    for cm in configmaps:
+        props = _properties((cm.get("data") or {}).get("edc.properties", ""))
+        missing = [line for line in ORGANIZATION_SCOPE if line not in props]
+        assert not missing, (cm["metadata"]["name"], missing)
+
+
+@pytest.mark.rule("X-18")
+def test_every_dev_edc_config_asks_for_the_organization_credential() -> None:
+    """The dev participants' EDC configs carry the same scope as the chart. *Red:*
+    drop a line from one of `services/connector/config/*.properties`."""
+    configs = sorted(
+        path
+        for path in (REPO_DIR / "services/connector/config").glob("*.properties")
+        if not path.name.endswith("-vault.properties")
+    )
+    assert configs, "no EDC config found"
+    for path in configs:
+        props = _properties(path.read_text(encoding="utf-8"))
+        missing = [line for line in ORGANIZATION_SCOPE if line not in props]
+        assert not missing, (path.name, missing)
 
 
 def test_every_provenance_reads_its_pseudonym_key_from_its_secret(

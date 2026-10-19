@@ -7,6 +7,8 @@ a list of strings reads as nothing rather than as a value.
 
 from __future__ import annotations
 
+import pytest
+
 from ds_edc.webhooks import ContractNegotiationEvent
 
 
@@ -19,23 +21,27 @@ def _event(presented) -> ContractNegotiationEvent:
     )
 
 
+@pytest.mark.rule("X-18")
 def test_the_lists_are_read():
     event = _event({"organizationId": ["example-org"], "organizationType": ["rec"]})
     assert event.presented_organization_ids == ["example-org"]
     assert event.presented_organization_types == ["rec"]
 
 
+@pytest.mark.rule("X-18")
 def test_duplicates_collapse_and_order_is_kept():
     event = _event({"organizationId": ["b-org", "a-org", "b-org"]})
     assert event.presented_organization_ids == ["b-org", "a-org"]
 
 
+@pytest.mark.rule("X-18")
 def test_an_older_extension_forwards_nothing():
     event = _event(None)
     assert event.presented_organization_ids == []
     assert event.presented_organization_types == []
 
 
+@pytest.mark.rule("X-18")
 def test_a_malformed_field_reads_as_nothing():
     assert _event("example-org").presented_organization_ids == []
     assert _event({"organizationId": "example-org"}).presented_organization_ids == []

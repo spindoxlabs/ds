@@ -511,6 +511,63 @@ class E2ESettings(BaseSettings):
         60, validation_alias="DS_ACCESS_SCOPE_CACHE_TTL_SECONDS"
     )
 
+    # ── The consumer's organisation on the agreement path ───────────────────
+    #
+    # `organization-rows` (X-17, X-18), `layer-verdicts` (X-19) and
+    # `organization-reissue` (P-30, P-31). The consumer is the one the settings
+    # above already name (`consumer_connector_url`, `consumer_did`, its
+    # organisation client); each target below is a **provider DID and an asset
+    # id**, and the provider's DSP address is read from that DID's document, so a
+    # target cannot name one participant and dial another.
+    #
+    # **Empty by default, and a flow with an empty target skips that check and
+    # says so.** No governance file in this repository declares an
+    # organization-bound dataset or a `deny_all` layer, so there is no default
+    # that could pass here; a deployment that has one names it.
+
+    #: The `organizationId` the consumer presents in its OrganizationCredential —
+    #: the only value an organization-bound dataset may serve it rows of.
+    consumer_organization_id: str = Field(
+        "", validation_alias="E2E_CONSUMER_ORGANIZATION_ID"
+    )
+    #: The consumer's owner alias at the trust anchor — what `ir-cli org
+    #: reissue --alias` takes.
+    consumer_organization_alias: str = Field(
+        "", validation_alias="E2E_CONSUMER_ORGANIZATION_ALIAS"
+    )
+    #: The consumer's STS secret: `organization-reissue` asks the consumer's STS
+    #: for the grant a verifier presents, as a counterparty's EDC does. The
+    #: verifier is `provider_did`, with `provider_sts_client_secret`.
+    consumer_sts_client_secret: str = Field(
+        "insecure-dev-secret", validation_alias="E2E_CONSUMER_STS_SECRET"
+    )
+    #: An organization-bound dataset whose layer the consumer's organization can
+    #: satisfy: `organization_match` on `org_rows_column`, no `org_type` the
+    #: consumer lacks. Its person layer must not gate on consent (`allow_all`),
+    #: which `layer-verdicts` also asserts on it.
+    org_rows_provider_did: str = Field("", validation_alias="E2E_ORG_ROWS_PROVIDER_DID")
+    org_rows_asset_id: str = Field("", validation_alias="E2E_ORG_ROWS_ASSET_ID")
+    org_rows_column: str = Field("", validation_alias="E2E_ORG_ROWS_COLUMN")
+    #: How many rows of the consumer's organization the dataset holds, when the
+    #: deployment knows (a fixture it loaded). Unset: at least one.
+    org_rows_expected: int | None = Field(
+        None, validation_alias="E2E_ORG_ROWS_EXPECTED"
+    )
+    #: An organization-bound dataset declaring an `org_type` the consumer's
+    #: credential does not carry: through an agreement it serves no rows.
+    org_mismatch_provider_did: str = Field(
+        "", validation_alias="E2E_ORG_MISMATCH_PROVIDER_DID"
+    )
+    org_mismatch_asset_id: str = Field("", validation_alias="E2E_ORG_MISMATCH_ASSET_ID")
+    #: A dataset whose organization layer is `deny_all`.
+    deny_all_provider_did: str = Field("", validation_alias="E2E_DENY_ALL_PROVIDER_DID")
+    deny_all_asset_id: str = Field("", validation_alias="E2E_DENY_ALL_ASSET_ID")
+    #: How to run the trust anchor's `ir-cli`, as an argv prefix split on
+    #: whitespace — `docker exec -i <anchor container> ir-cli`, or `ir-cli` where
+    #: the harness runs beside it. Empty: `organization-reissue` skips, since the
+    #: reissue is an operator's command and has no HTTP route.
+    ir_cli_command: str = Field("", validation_alias="E2E_IR_CLI_COMMAND")
+
     # Timeouts
     poll_timeout: int = 120
     poll_interval: float = 2.0

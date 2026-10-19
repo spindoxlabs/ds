@@ -39,6 +39,15 @@ CHARTS = sorted(
 )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    # `rule` names the rulebook rule a render test is evidence for; `ds-conformance`
+    # collects it. Registered here because `task helm:test` runs with no project, so
+    # no `pyproject.toml` declares it and a typo would otherwise pass unseen.
+    config.addinivalue_line(
+        "markers", "rule: names the rulebook rule id this test is evidence for"
+    )
+
+
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
 

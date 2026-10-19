@@ -288,7 +288,7 @@ def test_org_apply_guards_an_unselected_entry_that_carries_a_dataspace_block(
         "  - id: example-org\n"
         "    did: did:web:example-org.dataspaces.localhost\n"
         "    dataspace:\n"
-        "      legal_name: Spindox Labs S.r.l.\n"
+        "      legal_name: Example Organization\n"
         "      roles: [consumer]\n"
     )
     gov = tmp_path / "governance.yaml"

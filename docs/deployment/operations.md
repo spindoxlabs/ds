@@ -115,7 +115,7 @@ A failed render names the key, never the value.
 |---|---|
 | `ds-edc-<p>` | the participant host serves the DID document through the Ingress, `id` = the participant's DID |
 | `ds-identity-registry-<p>` | the participant registry answers in-cluster and holds that DID document |
-| `ds-connector-<p>` | the catalogue, read as the organisation client, is non-empty and as large as the governance's exposed set |
+| `ds-connector-<p>` (provider with governance) | the asset ids offered, read as the organisation client, equal the ids of the governance's exposed datasets — either difference fails, naming the ids; nothing exposed and nothing offered passes ([Catalogue and metadata](../rulebook/catalogue-and-metadata.md) `C-23`) |
 | `ds-portal-<p>` | through the Ingress, with no session, `/join` is 200 and `/` is not |
 
 A failed test Pod is kept (`before-hook-creation`), so `kubectl logs` says why. The rows the

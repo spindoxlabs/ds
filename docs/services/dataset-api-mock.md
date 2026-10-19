@@ -97,7 +97,11 @@ asset id is sent to `authorize` — so it decides which agreement and which cons
 5. **Apply the row filter** from the per-dataset verdict, dispatching on its `handler`. This
    service implements `direct_user_match` and `rec_registry`; a handler it does not implement
    withholds every row, because an *allow* carrying a filter says *these rows*, not *all
-   rows*.
+   rows*. **The verdict's `organizations` is parsed and ignored:** the mock keeps no
+   organization layer of its own, so a filter binding an organization (`organization_match`,
+   `member_wide`) is a handler it does not implement and the query is refused. The celine
+   `dataset-api` applies its own organization layer to `organizations` instead
+   ([Data exchange](../rulebook/data-exchange.md) `X-18`); nothing here models that.
 6. **Audit** the query back to the connector, which forwards it as a `QueryExecuted`
    provenance event. **Any failure here refuses the query** — see below.
 7. **Page and return.**

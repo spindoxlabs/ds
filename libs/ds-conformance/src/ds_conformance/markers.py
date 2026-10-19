@@ -9,6 +9,7 @@ derived instead of asserted.
 | Layer | Where | How a test declares it |
 |---|---|---|
 | unit, integration | `services/*/tests`, `libs/*/tests` | `@pytest.mark.rule("A-11")` |
+| unit (chart render) | `helm/tests` | `@pytest.mark.rule("A-11")` |
 | java | `services/edc-extensions/src/test` | `@Tag("rule:A-11")` |
 | e2e | `libs/ds-e2e/src/ds_e2e/flows` | `rules = ("D-17", "CR-5")` on the flow class |
 | ui | `services/portal/tests/ui` | `@rule:C-3` in the test title |
@@ -418,7 +419,11 @@ SELF = "libs/ds-conformance"
 
 def collect_all(repo: Path) -> tuple[list[Evidence], list[Problem]]:
     """Every marker in the tree, deduplicated and stably ordered."""
-    evidence, problems = collect_python(repo, [repo / "services", repo / "libs"])
+    # `helm/tests` renders the charts (`task helm:test`): evidence about what a
+    # chart emits, never about a running cluster — a rule citing it says so.
+    evidence, problems = collect_python(
+        repo, [repo / "services", repo / "libs", repo / "helm" / "tests"]
+    )
     evidence += collect_java(repo, [repo / "services"])
     flow_evidence, flow_problems = collect_flows(
         repo, repo / "libs" / "ds-e2e" / "src" / "ds_e2e" / "flows"

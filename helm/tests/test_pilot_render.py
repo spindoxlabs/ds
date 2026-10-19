@@ -558,7 +558,7 @@ def test_a_client_id_reaches_the_connector_and_its_sync_job(render_pilot):
 
 
 def test_the_row_17_values_reach_their_charts(render_pilot):
-    """Row 17 (D1's additions): `personTokenRequired`, `trustAnchor.*`,
+    """Row 17 (the values added with it): `personTokenRequired`, `trustAnchor.*`,
     `podAnnotations`, the EDC's `managementAudience`, the portal's `datasetApi`
     and `consumer`. *Red:* revert any one forward."""
 
@@ -817,7 +817,7 @@ def _tests(objects):
 
 def test_each_surface_ds_owns_has_a_helm_test(pilot):
     """T4 at render level: one test Pod per surface, each asserting content.
-    Whether each one passes healthy and fails broken is T4.1, on a cluster (D3).
+    Whether each one passes healthy and fails broken is T4.1, on a cluster.
     *Red:* drop a chart's `templates/tests/`."""
     names = {o["metadata"]["name"] for o in _tests(pilot)}
     for p in (REC, DSO):

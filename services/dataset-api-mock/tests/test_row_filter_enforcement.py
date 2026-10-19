@@ -66,9 +66,11 @@ def test_a_handler_this_plane_cannot_run_withholds_every_row():
 def test_an_organization_filter_naming_nobody_withholds_every_row(organization_filter):
     """What ds sends for a dataset narrowed to an organization's rows.
 
-    The connector carries the filter with nobody in it until it can say which
-    organization the consumer acts for. This plane implements neither handler, so
-    it refuses — the outcome the real `dataset-api` reaches with its own 403.
+    The connector carries the filter with nobody in it; which organization the
+    consumer acts for travels beside it as `organizations`, which this plane
+    ignores. It implements neither handler, so it refuses. The real `dataset-api`
+    sets this copy aside and applies its own organization layer to
+    `organizations` instead; this stand-in does not model that.
     """
     row_filter = DataplaneRowFilter.model_validate(
         {**organization_filter, "principals": [], "keys": [], "subject_dids": []}

@@ -131,8 +131,10 @@ API asks the connector whether rows may flow.
 6. **Per dataset:** a layer declared `deny_all` (either layer) is refused at once,
    `row_policy_denied`. If governance says no consent is needed, allow with no filter —
    unless the dataset declares a row filter binding an organization: then allow carrying the
-   first such filter as declared, naming nobody, which a data plane that cannot apply it
-   refuses (see [Personal data](../rulebook/personal-data.md#what-a-bare-allow-means)). A
+   first such filter as declared, naming nobody. The data plane applies its own organization
+   layer to the verdict's `organizations` (below) — the celine `dataset-api` sets the carried
+   copy aside — and a data plane that cannot apply an organization filter at all refuses
+   (see [Personal data](../rulebook/personal-data.md#what-a-bare-allow-means)). A
    layer verdict (`allow_all`) is neither a consent signal nor a filter to carry. Otherwise
    collect the subjects whose latest decision authorises this consumer — an offer that
    `requires_offers` another admits them only while that one does too — translate their DIDs
@@ -146,6 +148,8 @@ API asks the connector whether rows may flow.
    presented `organizationType`. When it cannot be established the list is empty and an
    organization-bound dataset's `reason` says why (`organization_unresolved`,
    `organization_type_mismatch`); the data plane's organization layer then serves no rows.
+   Why the organization travels beside the filter, and why the credential is a DEFAULT DCP
+   scope: [ADR-0030](../decisions/ADR-0030-the-consumers-organization-travels-beside-the-row-filter.md).
 7. **Combine.** The strictest verdict wins, and every refusal shares one response shape so a
    probe cannot distinguish causes.
 8. **Name the release.** An allow carries `decision_ref` — the release link

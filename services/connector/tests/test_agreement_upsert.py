@@ -45,6 +45,7 @@ async def _rows(engine) -> list[ContractAgreementORM]:
         return list((await session.execute(select(ContractAgreementORM))).scalars())
 
 
+@pytest.mark.rule("X-20")
 @pytest.mark.asyncio
 async def test_the_webhook_completes_the_row_the_status_route_wrote(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -67,6 +68,7 @@ async def test_the_webhook_completes_the_row_the_status_route_wrote(engine):
     )
 
 
+@pytest.mark.rule("X-20")
 @pytest.mark.asyncio
 async def test_a_late_writer_never_overwrites_what_the_webhook_stored(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -78,6 +80,7 @@ async def test_a_late_writer_never_overwrites_what_the_webhook_stored(engine):
     assert row.dsp_agreement_id == SHARED
 
 
+@pytest.mark.rule("X-20")
 @pytest.mark.asyncio
 async def test_the_insert_tolerates_a_row_that_already_exists(engine, monkeypatch):
     """The concurrent case: the row appears between nothing and the insert. Issued as
@@ -103,6 +106,7 @@ async def test_the_insert_tolerates_a_row_that_already_exists(engine, monkeypatc
     assert row.dsp_agreement_id == SHARED
 
 
+@pytest.mark.rule("X-20")
 def test_postgres_spells_the_same_conflict():
     """Every deployment runs Postgres; this suite runs SQLite. The Postgres statement
     the same values produce carries the same clause."""

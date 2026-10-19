@@ -20,6 +20,11 @@ from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.onboarding_seam import OnboardingSeamFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
 from ds_e2e.flows.organisation_token import OrganisationTokenFlow
+from ds_e2e.flows.organization_layer import (
+    LayerVerdictsFlow,
+    OrganizationReissueFlow,
+    OrganizationRowsFlow,
+)
 from ds_e2e.flows.provider_withdrawal import ProviderWithdrawalFlow
 from ds_e2e.flows.recipient_restriction import RecipientRestrictionFlow
 from ds_e2e.flows.semantic_model import SemanticModelFlow
@@ -110,6 +115,15 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     # After `collector-holder`, on the same registrations: the grid operator
     # reads back the keys it serves (ADR-0022). Both reset what they write.
     "holder-keys": HolderKeysFlow,
+    # The consumer's organisation on the agreement path (`X-17`/`X-18`, `X-19`,
+    # `P-30`/`P-31`). Each revokes its own requests on the way in and out, and
+    # each skips, saying which setting is missing, where the deployment names
+    # no organization-bound or `deny_all` target — this repository's fixtures
+    # declare neither. `organization-reissue` last of the three: it retires the
+    # consumer's credential the other two negotiate on.
+    "organization-rows": OrganizationRowsFlow,
+    "layer-verdicts": LayerVerdictsFlow,
+    "organization-reissue": OrganizationReissueFlow,
     # **Last, and deliberately.** It stops a container and restarts it, so it is
     # the one flow whose failure mode is *the next flow fails for reasons of its
     # own*. Running it last bounds that to zero, and `runner.run_flow` calls

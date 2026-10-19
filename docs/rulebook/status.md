@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-10-18 from `61ff792-dirty`.
+Generated 2026-10-19 from `f044bcc-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -16,11 +16,11 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …answered by a **named rule** | 39 |
 | …answered **at page level only** | 120 |
 | …**unassessed** | 531 |
-| Rulebook rules | 172 |
-| …claiming enforcement (`Enforced` / `Partly enforced`) | 140 |
-| …of those, **evidenced by a test that names them** | 140 |
+| Rulebook rules | 176 |
+| …claiming enforcement (`Enforced` / `Partly enforced`) | 144 |
+| …of those, **evidenced by a test that names them** | 144 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1225 |
+| Test nodes declaring a rule | 1264 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -58,6 +58,8 @@ None. Every rule claiming enforcement names at least one test node.
 | `C-19` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×18 | `catalog-discovery`, `services/identity-registry/tests/integration/test_participant_resolve.py::test_an_enrolled_participant_resolves_as_the_admin_listing_has_it`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_without_any_credential_is_refused` +17 more |
 | `C-20` | Enforced | ✅ evidenced | e2e×1, unit×4 | `authz-perimeter`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_refuses_a_credential_linked_to_another_participant`, `services/connector/tests/test_dataplane_authorize.py::test_another_consumers_agreement_is_refused` +2 more |
 | `C-21` | Enforced | ✅ evidenced | e2e×1, java×1, unit×9 | `recipient-restriction`, `PolicyRegistrationTest#membershipAndRecipientAreBoundInTheCatalogScope`, `libs/governance/tests/tests/test_mapper.py::test_access_requirements_all_no_membership_constraint` +8 more |
+| `C-22` | Enforced | ✅ evidenced | unit×8 | `libs/governance/tests/tests/test_compliance_checks.py::TestEnums::test_unknown_classification_warns_here_and_the_schema_refuses_it`, `libs/governance/tests/tests/test_validate_upstream.py::test_an_undeclared_layer_is_an_error`, `libs/governance/tests/tests/test_validate_upstream.py::test_both_layers_declared_pass` +5 more |
+| `C-23` | Partly enforced | ✅ evidenced | unit×1 | `helm/tests/test_render.py::test_the_catalogue_test_matches_ids_and_accepts_an_empty_catalogue` |
 
 ### `data-exchange.md`
 
@@ -81,9 +83,10 @@ None. Every rule claiming enforcement names at least one test node.
 | `X-14` | Declared | · consistent | — | — |
 | `X-15` | Declared | · consistent | — | — |
 | `X-16` | Declared | · consistent | — | — |
-| `X-17` | Enforced | ✅ evidenced | unit×7 | `services/connector/tests/test_dataplane_authorize.py::test_an_ungated_dataset_keeps_its_organization_filter`, `services/connector/tests/test_dataplane_authorize.py::test_a_member_wide_filter_is_carried_too`, `services/connector/tests/test_dataplane_authorize.py::test_a_person_layer_allow_all_does_not_gate_the_dataset` +4 more |
-| `X-18` | Enforced | ✅ evidenced | unit×12 | `services/connector/tests/test_consumer_organization.py::test_the_provider_records_the_presented_organisation`, `services/connector/tests/test_consumer_organization.py::test_the_consumer_side_records_nothing`, `services/connector/tests/test_consumer_organization.py::test_two_presented_organisations_record_none` +9 more |
-| `X-19` | Enforced | ✅ evidenced | unit×7 | `libs/governance/tests/tests/test_layer_verdicts.py::test_a_layer_verdict_is_not_a_consent_signal`, `libs/governance/tests/tests/test_layer_verdicts.py::test_a_verdict_is_not_published_as_a_consent_filter`, `services/connector/tests/test_dataplane_authorize.py::test_a_person_layer_allow_all_does_not_gate_the_dataset` +4 more |
+| `X-17` | Enforced | ✅ evidenced | e2e×1, unit×7 | `organization-rows`, `services/connector/tests/test_dataplane_authorize.py::test_an_ungated_dataset_keeps_its_organization_filter`, `services/connector/tests/test_dataplane_authorize.py::test_a_member_wide_filter_is_carried_too` +5 more |
+| `X-18` | Enforced | ✅ evidenced | e2e×1, java×5, unit×18 | `organization-rows`, `NegotiationEventPublisherTest#the_presented_organisation_is_forwarded`, `NegotiationEventPublisherTest#an_agreement_read_back_from_the_store_is_read_too` +21 more |
+| `X-19` | Enforced | ✅ evidenced | e2e×1, unit×7 | `layer-verdicts`, `libs/governance/tests/tests/test_layer_verdicts.py::test_a_layer_verdict_is_not_a_consent_signal`, `libs/governance/tests/tests/test_layer_verdicts.py::test_a_verdict_is_not_published_as_a_consent_filter` +5 more |
+| `X-20` | Enforced | ✅ evidenced | unit×4 | `services/connector/tests/test_agreement_upsert.py::test_the_webhook_completes_the_row_the_status_route_wrote`, `services/connector/tests/test_agreement_upsert.py::test_a_late_writer_never_overwrites_what_the_webhook_stored`, `services/connector/tests/test_agreement_upsert.py::test_the_insert_tolerates_a_row_that_already_exists` +1 more |
 
 ### `data-models.md`
 
@@ -146,8 +149,9 @@ None. Every rule claiming enforcement names at least one test node.
 | `P-27` | Enforced | ✅ evidenced | unit×11 | `libs/ds-auth/tests/test_user_credentials.py::test_a_credential_naming_both_registers_is_accepted`, `libs/ds-auth/tests/test_user_credentials.py::test_a_credential_naming_one_register_is_still_accepted`, `libs/ds-auth/tests/test_user_credentials.py::test_a_revoked_credential_is_refused` +8 more |
 | `P-28` | Enforced | ✅ evidenced | unit×8 | `services/identity-registry/tests/test_role_transition.py::test_a_transition_suspends_the_predecessor_and_issues_a_successor`, `services/identity-registry/tests/test_role_transition.py::test_the_suspension_bit_is_set_and_the_revocation_bit_is_not`, `services/identity-registry/tests/test_role_transition.py::test_the_successor_carries_the_new_claim_and_keeps_the_old_ones` +5 more |
 | `P-29` | Enforced | ✅ evidenced | unit×5 | `services/identity-registry/tests/test_did_retirement.py::test_a_person_whose_credentials_are_all_revoked_is_retired`, `services/identity-registry/tests/test_did_retirement.py::test_one_standing_credential_keeps_the_did`, `services/identity-registry/tests/test_did_retirement.py::test_an_unreadable_register_retires_nothing_and_is_reported` +2 more |
-| `P-30` | Enforced | ✅ evidenced | unit×5 | `services/identity-registry/tests/test_org_reissue.py::test_reissue_delivers_the_successor_then_suspends_the_predecessor`, `services/identity-registry/tests/test_org_reissue.py::test_reinstating_after_a_reissue_leaves_the_predecessor_suspended`, `services/identity-registry/tests/test_org_reissue.py::test_a_failed_delivery_suspends_nothing` +2 more |
-| `P-31` | Enforced | ✅ evidenced | unit×4 | `services/identity-registry/tests/test_presentation_status.py::test_a_retired_credential_is_left_out`, `services/identity-registry/tests/test_presentation_status.py::test_an_unreadable_register_leaves_the_credential_out`, `services/identity-registry/tests/test_presentation_status.py::test_the_holder_reads_revocation_and_suspension` +1 more |
+| `P-30` | Enforced | ✅ evidenced | e2e×1, unit×10 | `organization-reissue`, `services/identity-registry/tests/test_org_reissue.py::test_reissue_delivers_the_successor_then_suspends_the_predecessor`, `services/identity-registry/tests/test_org_reissue.py::test_reinstating_after_a_reissue_leaves_the_predecessor_suspended` +8 more |
+| `P-31` | Enforced | ✅ evidenced | e2e×1, unit×6 | `organization-reissue`, `services/identity-registry/tests/test_presentation_status.py::test_a_retired_credential_is_left_out`, `services/identity-registry/tests/test_presentation_status.py::test_an_unreadable_register_leaves_the_credential_out` +4 more |
+| `P-32` | Enforced | ✅ evidenced | unit×3 | `services/identity-registry/tests/test_org_reissue.py::test_the_credential_names_the_organisation_and_its_platform_role`, `services/identity-registry/tests/test_org_reissue.py::test_an_owner_without_a_platform_role_gets_no_organization_type`, `services/identity-registry/tests/test_org_reissue.py::test_organization_type_reads_only_the_organization_role` |
 
 ### `personal-data.md`
 

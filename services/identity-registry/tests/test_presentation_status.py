@@ -117,6 +117,7 @@ async def test_a_credential_naming_no_register_is_presented(
     ]
 
 
+@pytest.mark.rule("P-31")
 @pytest.mark.asyncio
 async def test_without_a_reader_nothing_is_read(db_session, holder_with_org_credential):
     """A person's credentials are this registry's own rows: no register read."""
@@ -208,6 +209,7 @@ async def test_the_participant_does_not_present_its_retired_credential(
     assert read.seen == ["OrganizationCredential"]
 
 
+@pytest.mark.rule("P-31")
 @pytest.mark.asyncio
 async def test_another_holder_s_query_reads_no_register(
     client, db_session, resolver, holder_with_org_credential, monkeypatch

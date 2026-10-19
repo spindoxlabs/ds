@@ -7,6 +7,7 @@ import org.eclipse.edc.iam.verifiablecredentials.spi.model.CredentialSubject;
 import org.eclipse.edc.iam.verifiablecredentials.spi.model.Issuer;
 import org.eclipse.edc.iam.verifiablecredentials.spi.model.VerifiableCredential;
 import org.eclipse.edc.policy.model.Policy;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -59,6 +60,7 @@ class NegotiationEventPublisherTest {
 
     private static final Map<String, Object> MEMBER = Map.of("memberOf", "dataspace");
 
+    @Tag("rule:X-18")
     @Test
     void the_presented_organisation_is_forwarded() {
         var claims = Map.<String, Object>of(Credentials.VC_CLAIM, List.of(
@@ -71,6 +73,7 @@ class NegotiationEventPublisherTest {
         assertEquals(List.of("rec"), organization.get("organizationType"));
     }
 
+    @Tag("rule:X-18")
     @Test
     void an_agreement_read_back_from_the_store_is_read_too() {
         // No java.time module on this classpath; the dates are not what is read,
@@ -94,6 +97,7 @@ class NegotiationEventPublisherTest {
         assertEquals(List.of("rec"), organization.get("organizationType"));
     }
 
+    @Tag("rule:X-18")
     @Test
     void only_the_organisation_credential_is_read() {
         // The claim name on another credential type says nothing about the
@@ -107,6 +111,7 @@ class NegotiationEventPublisherTest {
         assertEquals(List.of(), organization.get("organizationType"));
     }
 
+    @Tag("rule:X-18")
     @Test
     void no_claims_forward_empty_lists() {
         var organization = NegotiationEventPublisher.presentedOrganization(agreement(null));
@@ -115,6 +120,7 @@ class NegotiationEventPublisherTest {
         assertEquals(List.of(), organization.get("organizationType"));
     }
 
+    @Tag("rule:X-18")
     @Test
     void two_organisations_are_both_forwarded_for_the_connector_to_refuse() {
         var claims = Map.<String, Object>of(Credentials.VC_CLAIM, List.of(

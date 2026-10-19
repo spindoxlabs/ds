@@ -51,6 +51,19 @@ def _drop_cached_engine() -> None:
 
 
 @pytest.fixture(autouse=True)
+def _the_unit_suite_is_a_dev_context(request, monkeypatch):
+    """`DS_ENV=dev` for every unit test, however the suite is invoked.
+
+    `DS_ENV` defaults to `production`, where `ir-cli` and the app refuse their dev
+    defaults. `task test` sets `dev`; a bare `uv run pytest` did not, and 79 tests
+    then failed on the guard rather than on what they test. A test about the
+    guard sets `DS_ENV` itself, which overrides this for that test.
+    """
+    if not request.node.get_closest_marker("integration"):
+        monkeypatch.setenv("DS_ENV", "dev")
+
+
+@pytest.fixture(autouse=True)
 def _unit_tests_never_reach_a_real_database(request, monkeypatch):
     if request.node.get_closest_marker("integration"):
         yield

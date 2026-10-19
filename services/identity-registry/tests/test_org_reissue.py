@@ -83,7 +83,7 @@ def refusing_store(monkeypatch):
 # ── The claims ────────────────────────────────────────────────────
 
 
-@pytest.mark.rule("P-2")
+@pytest.mark.rule("P-2", "P-32")
 @pytest.mark.asyncio
 async def test_the_credential_names_the_organisation_and_its_platform_role(
     db_session, tmp_path
@@ -102,7 +102,7 @@ async def test_the_credential_names_the_organisation_and_its_platform_role(
     assert subject["roles"] == ["consumer"]
 
 
-@pytest.mark.rule("P-2")
+@pytest.mark.rule("P-2", "P-32")
 @pytest.mark.asyncio
 async def test_an_owner_without_a_platform_role_gets_no_organization_type(
     db_session, tmp_path
@@ -117,6 +117,7 @@ async def test_an_owner_without_a_platform_role_gets_no_organization_type(
     assert "organizationType" not in subject
 
 
+@pytest.mark.rule("P-32")
 def test_organization_type_reads_only_the_organization_role():
     owner = Owner(id="ex-00001", name="X", type="schema:NGO")
     assert ops.organization_type(owner) is None
@@ -306,6 +307,7 @@ async def test_a_predecessor_naming_no_suspension_register_is_refused_before_iss
     assert not await is_revoked(db_session, old.status_list_index)
 
 
+@pytest.mark.rule("P-30")
 @pytest.mark.asyncio
 async def test_dry_run_issues_delivers_and_suspends_nothing(
     db_session, tmp_path, credential_store
@@ -338,6 +340,7 @@ async def test_an_organisation_with_no_current_credential_is_refused(
     assert credential_store == []
 
 
+@pytest.mark.rule("P-30")
 @pytest.mark.asyncio
 async def test_an_organisation_that_has_not_enrolled_is_refused(
     db_session, tmp_path, credential_store
@@ -375,6 +378,7 @@ async def test_an_unregistered_owner_is_refused(db_session, tmp_path):
         await org_reissue.reissue_owner(db_session, settings, "nobody")
 
 
+@pytest.mark.rule("P-30")
 @pytest.mark.asyncio
 async def test_a_holder_publishing_no_credential_service_is_refused_before_issuing(
     db_session, tmp_path
@@ -413,6 +417,8 @@ def cli_database(tmp_path, monkeypatch):
         await eng.dispose()
 
     asyncio.run(_create())
+    # ir-cli refuses its dev defaults outside DS_ENV=dev; not this test's subject.
+    monkeypatch.setenv("DS_ENV", "dev")
     monkeypatch.setenv("IDENTITY_REGISTRY_DATABASE_URL", url)
     monkeypatch.setenv("DB_SKIP_SCHEMA_CHECK", "true")
     get_settings.cache_clear()
@@ -441,6 +447,7 @@ def _reissue_args(*extra: str) -> list[str]:
     return ["org", "reissue", "--alias", ALIAS, *extra]
 
 
+@pytest.mark.rule("P-30")
 def test_the_command_reissues_and_reports(cli_database, tmp_path, credential_store):
     from identity_registry.cli.main import app as cli
 
@@ -460,6 +467,7 @@ def test_the_command_reissues_and_reports(cli_database, tmp_path, credential_sto
     assert len(credential_store) == 1
 
 
+@pytest.mark.rule("P-30")
 def test_the_command_exits_non_zero_on_a_failed_delivery(
     cli_database, tmp_path, refusing_store
 ):

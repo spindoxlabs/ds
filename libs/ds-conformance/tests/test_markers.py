@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from ds_conformance.markers import collect_flows, collect_java, collect_python, collect_ui
+from ds_conformance.markers import (
+    collect_all,
+    collect_flows,
+    collect_java,
+    collect_python,
+    collect_ui,
+)
 from ds_conformance.model import Layer
 
 
@@ -27,6 +33,19 @@ def test_a_function_marker_is_collected(tmp_path: Path) -> None:
     assert evidence[0].unit == "services/connector"
     assert evidence[0].layer is Layer.UNIT
     assert evidence[0].node.endswith("::test_opt_out_beats_the_wildcard")
+
+
+def test_a_chart_render_test_is_collected(tmp_path: Path) -> None:
+    """`helm/tests` is a root of its own: a rule a chart's render evidences is not
+    reported unevidenced for want of a `services/` or `libs/` path."""
+    make(
+        tmp_path / "helm" / "tests" / "test_render.py",
+        'import pytest\n\n\n@pytest.mark.rule("C-23")\n'
+        "def test_the_catalogue_test_matches_ids() -> None:\n    pass\n",
+    )
+    evidence, problems = collect_all(tmp_path)
+    assert problems == []
+    assert [(e.rule_id, e.unit, e.layer) for e in evidence] == [("C-23", "helm", Layer.UNIT)]
 
 
 def test_one_test_may_evidence_several_rules(tmp_path: Path) -> None:

@@ -146,7 +146,7 @@ status — the local doctor's chart-owned rows on a cluster:
 |---------|---------|
 | `ds-edc-<p>` | `https://<p>.<baseDomain>/.well-known/did.json` through the Ingress has `id` = the participant's DID |
 | `ds-identity-registry-<p>` | the registry answers in-cluster and holds the participant's DID document |
-| `ds-connector-<p>` (provider with governance) | `/provider/assets`, as the organisation client, is non-empty and as large as the governance's exposed set |
+| `ds-connector-<p>` (provider with governance) | the asset ids `/provider/assets` offers, as the organisation client, equal the ids of the governance's exposed datasets; either difference fails, naming the ids; nothing exposed and nothing offered passes |
 | `ds-portal-<p>` | through the Ingress, no session: `/join` is 200, `/` is not |
 
 They run the ds-connector image of the same release. `tests.tlsVerify: false`

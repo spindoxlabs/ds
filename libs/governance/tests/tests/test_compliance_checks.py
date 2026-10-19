@@ -142,6 +142,7 @@ class TestEnums:
         )
         assert "access-level" not in codes(run(path).errors)
 
+    @pytest.mark.rule("C-22")
     def test_unknown_classification_warns_here_and_the_schema_refuses_it(
         self, tmp_path: Path
     ):

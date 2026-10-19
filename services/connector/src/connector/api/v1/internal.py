@@ -656,11 +656,12 @@ async def _authorize_dataset(
         # agreement does not replace it: answering a bare `ALLOW` here served
         # every organization's rows to any holder of an agreement. The filter
         # travels as declared and names nobody — no principals, keys or subject
-        # DIDs — because ds does not yet say which organization the consumer
-        # acts for. A data plane that cannot apply it refuses (the celine
-        # `dataset-api` answers 403 `row_filter_unenforceable`), so such a
-        # dataset serves no rows on this path until the consumer's organization
-        # is carried. Fail-closed on purpose.
+        # DIDs: who the consumer acts for is the verdict's `organizations`, not
+        # a member of this filter. The data plane applies its own organization
+        # layer to that list (the celine `dataset-api` sets this copy aside), so
+        # an empty list serves no organization rows; a data plane that cannot
+        # apply the filter at all refuses (`row_filter_unenforceable`).
+        # Fail-closed on purpose.
         log.info(
             "dataplane authorize: %s carries organization filter %s",
             dataset_id,

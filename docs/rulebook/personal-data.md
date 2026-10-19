@@ -60,9 +60,11 @@ honest about a limit in another:
 
 `POST /internal/dataplane/authorize` answers `ALLOW` with no row filter when
 `consent_gate` finds **none** of the four declarations and the dataset declares no row
-filter binding an organization. That verdict is reached by *absence*, not by assertion:
-nothing in the file said "this data is impersonal" — nothing said anything, and the gate
-found nothing to object with.
+filter binding an organization. An organization layer declared only as the verdict
+`allow_all` gives the same bare `ALLOW`: it narrows nothing, so there is no filter to carry,
+and there it is stated rather than absent. Otherwise that verdict is reached by *absence*,
+not by assertion: nothing in the file said "this data is impersonal" — nothing said
+anything, and the gate found nothing to object with.
 
 **A layer verdict is a statement, not a filter.** The platform's row policy has two layers,
 `person` and `organization`, and a file states what a layer does with `allow_all` (every
