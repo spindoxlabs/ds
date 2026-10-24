@@ -34,7 +34,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=5",
     "ruff>=0.6",
-    "mypy>=1.11",
+    "mypy>=2.4.0",
     # Stubs for `pyyaml`, which ships none. Without them mypy reads every
     # `yaml.safe_load` as `Any` and stops checking what is done with the result —
     # in a repository whose central shape is parsed from YAML, that is the
