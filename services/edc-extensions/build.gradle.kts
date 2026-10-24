@@ -71,7 +71,7 @@ dependencies {
     // Matches (or exceeds) the jackson EDC's own BOMs resolve to at runtime
     // (2.22.x at 0.18.0); 2.17.0 was the version this module compiled and
     // tested against while the packaged connector ran 2.22.
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.3")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.4")
 
     // Purposes reads the shape a policy arrives in, and that shape varies by how
     // the policy reached the store — the one place here worth unit-testing
