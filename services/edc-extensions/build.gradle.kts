@@ -67,11 +67,11 @@ dependencies {
     testImplementation("org.eclipse.edc:http-lib:$edcVersion")
     testImplementation("dev.failsafe:failsafe:3.3.2")
     // HTTP client for consent check
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
     // Matches (or exceeds) the jackson EDC's own BOMs resolve to at runtime
     // (2.22.x at 0.18.0); 2.17.0 was the version this module compiled and
     // tested against while the packaged connector ran 2.22.
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.3")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.4")
 
     // Purposes reads the shape a policy arrives in, and that shape varies by how
     // the policy reached the store — the one place here worth unit-testing
