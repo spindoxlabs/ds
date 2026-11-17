@@ -31,6 +31,15 @@ global:
   namespaces:
     authority: ds-authority
     participantPrefix: ds-
+    # true: the ds-namespaces release creates and labels them. false: the platform
+    # pre-creates them (a multi-tenant cluster that owns its Namespace objects); the
+    # release is skipped and nothing waits on it.
+    create: true
+    # Where the ds-namespaces release lives. Two data spaces on one cluster that both
+    # create their namespaces need different ones.
+    releaseNamespace: default
+    # `participantNamespaces` is computed by the helmfile from the enabled
+    # participants; the cross-namespace NetworkPolicies admit exactly those, by name.
 
   # ── Logging ─────────────────────────────────────────────────────────────────
   # Applied to every Python service through `ds.env.common`, deliberately from
@@ -95,8 +104,22 @@ global:
   # cert-manager is assumed present. Set clusterIssuer to have certificates
   # issued automatically, or secretName to use a pre-created certificate.
   ingress:
+    # nginx: Ingress objects with ingress-nginx annotations (className, annotations
+    # below). traefik: IngressRoute + Middleware (traefik.io/v1alpha1) and, with a
+    # clusterIssuer, one cert-manager Certificate per host; no Ingress at all.
+    # docs/deployment/exposure.md, "Ingress controllers".
+    controller: nginx # nginx | traefik
     className: nginx
-    annotations: {}
+    annotations: {} # nginx mode only
+    # The controller's namespace and, optionally, its pods' labels: the from-ingress
+    # NetworkPolicies admit exactly those.
+    controllerNamespace: ingress-nginx
+    controllerPodLabels: {} # e.g. {app.kubernetes.io/name: traefik}
+    traefik:
+      # Set → every IngressRoute and Middleware carries `kubernetes.io/ingress.class`,
+      # for a Traefik whose CRD provider filters on a class. Empty → none.
+      ingressClass: ""
+      entryPoints: [websecure] # HTTP → HTTPS is the entrypoint's redirect
     tls:
       clusterIssuer: letsencrypt-prod
       secretName: "" # set → used verbatim, clusterIssuer ignored

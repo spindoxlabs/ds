@@ -1,0 +1,53 @@
+{{- if and .Values.ingress.enabled (eq (include "ir.role" .) "trust-anchor") (eq (include "ds.ingress.controller" .) "traefik") }}
+{{- $ta := include "ir.trustAnchorDomain" . }}
+{{- $fullname := include "ds.fullname" . }}
+{{- $port := .Values.service.port }}
+# =============================================================================
+# The trust anchor's public surface in traefik mode: the same paths as
+# ingress.yaml (read its header for what is exposed and why), as one IngressRoute.
+#
+#   /.well-known/did.json  → replacePath /dids/did:web:<anchor>/did.json
+#   /status/*, /trust, /issuer/*, and /credentials/* only with
+#   credentialService.expose
+# =============================================================================
+{{- with (include "ds.traefik.certificate" (dict "ctx" . "host" $ta)) }}
+---
+# The host's one certificate (cert-manager's ingress-shim does not read IngressRoutes).
+{{ . }}
+{{- end }}
+---
+{{ include "ds.traefik.replacePath" (dict "ctx" . "name" (printf "%s-did" $fullname) "path" (printf "/dids/did:web:%s/did.json" $ta)) }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  {{- include "ds.traefik.metadataAnnotations" . | nindent 2 }}
+spec:
+  {{- include "ds.traefik.entryPoints" . | nindent 2 }}
+  routes:
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && Path(`/.well-known/did.json`)" $ta | quote }}
+      middlewares:
+        - name: {{ $fullname }}-did
+      services:
+        - name: {{ $fullname }}
+          port: {{ $port }}
+    # StatusList revocation lists, the trust list, the Issuer Service.
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && (%s || Path(`/trust`) || %s)" $ta (include "ds.traefik.prefix" "/status") (include "ds.traefik.prefix" "/issuer") | quote }}
+      services:
+        - name: {{ $fullname }}
+          port: {{ $port }}
+    {{- if .Values.credentialService.expose }}
+    # DCP credential service: off by default (ingress.yaml says when to enable it).
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && %s" $ta (include "ds.traefik.prefix" "/credentials") | quote }}
+      services:
+        - name: {{ $fullname }}
+          port: {{ $port }}
+    {{- end }}
+  {{- include "ds.traefik.tls" (dict "ctx" . "host" $ta) | nindent 2 }}
+{{- end }}

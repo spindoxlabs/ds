@@ -1,0 +1,68 @@
+{{- if and .Values.ingress.enabled (eq (include "ds.ingress.controller" .) "traefik") }}
+{{- $host := include "edc.host" . }}
+{{- $fullname := include "ds.fullname" . }}
+{{- $irLocal := printf "ds-identity-registry-%s" (required "participant.name is required" .Values.participant.name) }}
+# =============================================================================
+# The participant public host in traefik mode: the same surface as ingress.yaml
+# (read its header), as one IngressRoute plus the two rewrites as Middlewares.
+#
+#   /.well-known/did.json        → this participant's own registry, replacePath
+#                                  /dids/did:web:<host>/did.json
+#   /credentials, /sts, /users   → the same registry, unchanged
+#   /protocol                    → EDC DSP protocol port
+#   /.well-known/dspace-version  → EDC protocol port, replacePath
+#                                  /protocol/.well-known/dspace-version
+#
+# Management and control are routed nowhere, as in nginx mode.
+# =============================================================================
+{{- with (include "ds.traefik.certificate" (dict "ctx" . "host" $host)) }}
+---
+# The host's one certificate (cert-manager's ingress-shim does not read IngressRoutes).
+{{ . }}
+{{- end }}
+---
+{{ include "ds.traefik.replacePath" (dict "ctx" . "name" (printf "%s-did" $fullname) "path" (printf "/dids/did:web:%s/did.json" $host)) }}
+---
+{{ include "ds.traefik.replacePath" (dict "ctx" . "name" (printf "%s-dspace-version" $fullname) "path" "/protocol/.well-known/dspace-version") }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  {{- include "ds.traefik.metadataAnnotations" . | nindent 2 }}
+spec:
+  {{- include "ds.traefik.entryPoints" . | nindent 2 }}
+  routes:
+    # did:web resolution: the document this participant's own registry holds.
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && Path(`/.well-known/did.json`)" $host | quote }}
+      middlewares:
+        - name: {{ $fullname }}-did
+      services:
+        - name: {{ $irLocal }}
+          port: 30005
+    # Its credential service, its STS, and the DID documents of the people it
+    # onboarded (`DID-11` step 2): plain proxies to the same registry.
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && (%s || %s || %s)" $host (include "ds.traefik.prefix" "/credentials") (include "ds.traefik.prefix" "/sts") (include "ds.traefik.prefix" "/users") | quote }}
+      services:
+        - name: {{ $irLocal }}
+          port: 30005
+    # DSP protocol.
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && %s" $host (include "ds.traefik.prefix" "/protocol") | quote }}
+      services:
+        - name: {{ $fullname }}
+          port: {{ .Values.ports.protocol }}
+    # DSP version metadata at the RFC 8615 location (ingress.yaml says why).
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && Path(`/.well-known/dspace-version`)" $host | quote }}
+      middlewares:
+        - name: {{ $fullname }}-dspace-version
+      services:
+        - name: {{ $fullname }}
+          port: {{ .Values.ports.protocol }}
+  {{- include "ds.traefik.tls" (dict "ctx" . "host" $host) | nindent 2 }}
+{{- end }}

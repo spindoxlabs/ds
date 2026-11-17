@@ -1,0 +1,26 @@
+{{- if and .Values.ingress.enabled (eq (include "ds.ingress.controller" .) "traefik") }}
+{{- $host := include "oauth2proxy.host" . }}
+# =============================================================================
+# /oauth2/* on the portal's host, traefik mode: sign-in, callback, sign-out.
+# Plain, with no middleware: a user arrives here precisely because they have no
+# session (ingress.yaml). The longer rule wins over the portal's `/` route. No
+# Certificate: the portal's release owns this host's; the route names the same
+# secret, without which Traefik would not serve it over TLS.
+# =============================================================================
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  {{- include "ds.traefik.metadataAnnotations" . | nindent 2 }}
+spec:
+  {{- include "ds.traefik.entryPoints" . | nindent 2 }}
+  routes:
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && %s" $host (include "ds.traefik.prefix" "/oauth2") | quote }}
+      services:
+        - name: {{ include "ds.fullname" . }}
+          port: {{ .Values.service.port }}
+  {{- include "ds.traefik.tls" (dict "ctx" . "host" $host) | nindent 2 }}
+{{- end }}

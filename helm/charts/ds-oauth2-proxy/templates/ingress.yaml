@@ -1,4 +1,5 @@
-{{- if .Values.ingress.enabled }}
+{{- /* nginx mode; traefik mode is ingressroute.yaml. */}}
+{{- if and .Values.ingress.enabled (eq (include "ds.ingress.controller" .) "nginx") }}
 {{- $host := include "oauth2proxy.host" . }}
 # =============================================================================
 # /oauth2/* on the **portal's** host — sign-in, callback and sign-out.

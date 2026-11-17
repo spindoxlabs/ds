@@ -6,7 +6,8 @@
 ---
 # In-cluster callers: every participant namespace reaches the registry for STS
 # token issuance, VP queries, participant/owner resolution and membership
-# checks. Restricted by namespace label, not open to the whole cluster.
+# checks. This instance's participant namespaces by name, not open to the whole
+# cluster nor to another data space's namespaces.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -21,9 +22,7 @@ spec:
     - Ingress
   ingress:
     - from:
-        - namespaceSelector:
-            matchLabels:
-              dataspace.spindoxlabs.io/participant: "true"
+        {{- include "ds.networkPolicy.participantNamespacesPeer" . | nindent 8 }}
       ports:
         - protocol: TCP
           port: {{ .Values.service.port }}
@@ -36,7 +35,7 @@ only signal was a metric that never appeared.
 
 Note the rule above admits every participant namespace to this same port — that is
 what makes an explicit Prometheus rule necessary rather than redundant: the monitoring
-namespace does not carry the participant label, and it must not have to.
+namespace is not a participant namespace, and it must not have to be.
 
 Gated on the same flag as the others, so with chart defaults `/metrics` here is
 reachable by nobody. It is in no Ingress on any chart.

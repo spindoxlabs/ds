@@ -78,12 +78,46 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ ((.ctx.Values.global).ingress).controllerNamespace | default "ingress-nginx" }}
+          {{- with ((.ctx.Values.global).ingress).controllerPodLabels }}
+          # The controller's pods only, not everything in its namespace.
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
       ports:
 {{- range .ports }}
         - protocol: TCP
           port: {{ . }}
 {{- end }}
 {{- end }}
+{{- end -}}
+
+{{/*
+The peer that admits **this instance's** participant namespaces, by name.
+
+`global.namespaces.participantNamespaces` is computed by the helmfile from the
+enabled participants. Selecting by name rather than by a namespace label is the
+isolation between two data spaces on one cluster: a label selector admits any
+namespace carrying it, including another instance's, and on a platform where
+tenants label their own namespaces, any namespace that adds it. A name list needs
+no label, so it also works where the platform pre-creates the namespaces
+(`global.namespaces.create: false`).
+
+An empty list fails: it would render a peer that matches no namespace, and every
+participant's DSP and STS traffic would be denied without a word.
+
+Args: the chart's root context
+*/}}
+{{- define "ds.networkPolicy.participantNamespacesPeer" -}}
+{{- $nss := (((.Values.global).namespaces).participantNamespaces | default list) -}}
+{{- if not $nss -}}
+{{- fail "global.namespaces.participantNamespaces is empty: the cross-namespace NetworkPolicies admit this instance's participant namespaces by name, and the helmfile computes the list from the enabled participants (render through it, or set the list)" -}}
+{{- end -}}
+- namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: {{ $nss | toJson }}
 {{- end -}}
 
 {{/*

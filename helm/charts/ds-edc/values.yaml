@@ -152,7 +152,10 @@ global:
   # the realm at another address than the issuer it names.
   keycloak: {issuerUrl: "", tokenUrl: "", jwksUrl: ""}
   image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
-  namespaces: {authority: ds-authority}
+  # participantNamespaces: the namespaces the DSP peer rule admits, by name. The
+  # helmfile computes it from the enabled participants; this default is the chart's
+  # own default participant, for a standalone render.
+  namespaces: {authority: ds-authority, participantNamespaces: [ds-provider]}
   postgres:
     host: ds-pg-rw.database.svc.cluster.local
     port: 5432

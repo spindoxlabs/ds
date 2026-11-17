@@ -77,6 +77,54 @@ auth:
     # registration this assumes.
     clientId: oauth2_proxy
 
+    # The headers the proxy vouches for. nginx mode: `auth-response-headers`, each
+    # a proxy_set_header that overwrites the client's. traefik mode: forwardAuth's
+    # `authResponseHeaders`, which Traefik deletes from the forwarded request and
+    # sets from the proxy's answer. Either way a listed header cannot be forged;
+    # an unlisted one the portal reads is passed through from the client verbatim.
+    # GROW this list, never prune it (templates/ingress.yaml says why).
+    responseHeaders:
+      - X-Auth-Request-Access-Token
+      - X-Auth-Request-Email
+      - X-Auth-Request-User
+      - X-Auth-Request-Preferred-Username
+      - X-Auth-Request-Groups
+      - Authorization
+
+    # Traefik mode only.
+    traefik:
+      # Deleted from every request before anything else runs, on the walled route
+      # and on the public carve-outs alike. nginx's auth subrequest overwrote the
+      # identity headers; Traefik's forwardAuth does not touch a header it is not
+      # told to, so this is the strip. Every identity header a proxy in front of the
+      # portal could ever emit belongs here.
+      #
+      # `Authorization` is NOT here, on purpose: a machine caller authenticates to
+      # the proxy with it (`skip_jwt_bearer_tokens`). It is in `responseHeaders`,
+      # which deletes it before the proxy's value is copied in.
+      stripHeaders:
+        - X-Auth-Request-Access-Token
+        - X-Auth-Request-Email
+        - X-Auth-Request-User
+        - X-Auth-Request-Preferred-Username
+        - X-Auth-Request-Groups
+        - X-Forwarded-User
+        - X-Forwarded-Email
+        - X-Forwarded-Preferred-Username
+        - X-Forwarded-Groups
+        - X-Forwarded-Access-Token
+      # The proxy's root, not `/oauth2/auth`: the static upstream answers 200 with
+      # the X-Auth-Request-* headers for a session, and an anonymous browser gets
+      # the proxy's own 302 to the IdP, which Traefik returns as is. This is what
+      # replaces nginx's `auth-signin` (Traefik's `errors` middleware is refused
+      # by multi-tenant platforms). Derived from the release and namespace when
+      # empty: http://ds-oauth2-proxy-<participant>.<namespace>.svc.cluster.local:<port>/
+      forwardAuthUrl: ""
+      # Cookies the proxy sets on a successful check (a refreshed session) that
+      # must reach the browser: forwardAuth drops a 2xx answer's Set-Cookie
+      # otherwise. The ds-oauth2-proxy cookie name, and its split chunks.
+      authCookies: [_oauth2_proxy_ds, _oauth2_proxy_ds_0, _oauth2_proxy_ds_1, _oauth2_proxy_ds_2]
+
 # The dataset-api is external in production (no chart ships it), so it cannot be
 # derived. Leave empty and the catalogue detail view, /my-data's "data held about
 # you" list and the health page's dataset-api probe are unavailable — the portal

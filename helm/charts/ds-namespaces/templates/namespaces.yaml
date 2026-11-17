@@ -15,7 +15,8 @@ metadata:
   name: {{ . }}
   labels:
     app.kubernetes.io/part-of: dataspace
-    # The selector the authority-registry and EDC cross-namespace policies match.
+    # Descriptive only: the cross-namespace NetworkPolicies select this
+    # instance's participant namespaces by name, not by this label.
     dataspace.spindoxlabs.io/participant: "true"
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest

@@ -1,9 +1,9 @@
 apiVersion: v2
 name: ds-namespaces
 description: |
-  Owns the dataspace namespaces and their labels. Participant namespaces carry
-  dataspace.spindoxlabs.io/participant=true, which the cross-namespace
-  NetworkPolicies (authority registry, EDC DSP) select on. Deployed first;
-  every other release depends on it.
+  Owns the dataspace namespaces and their labels (Pod Security, part-of). The
+  cross-namespace NetworkPolicies select participant namespaces by name, not by
+  label. Deployed first; every other release depends on it. Skipped with
+  global.namespaces.create=false, where the platform pre-creates the namespaces.
 type: application
 version: 0.1.0

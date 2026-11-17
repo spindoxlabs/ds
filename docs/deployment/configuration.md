@@ -28,6 +28,13 @@ immutable once a dataspace is live.
 |---|---|---|
 | `global.namespaces.authority` | `ds-authority` | one trust boundary |
 | `global.namespaces.participantPrefix` | `ds-` | each participant lands in `<prefix><name>` |
+| `global.namespaces.create` | `true` | `false`: the platform pre-creates the namespaces (a multi-tenant cluster that owns its Namespace objects). The `ds-namespaces` release is skipped and nothing waits on it |
+| `global.namespaces.releaseNamespace` | `default` | where the `ds-namespaces` release lives. Two data spaces on one cluster that both create their namespaces need different ones |
+
+The cross-namespace NetworkPolicies admit **this instance's** participant namespaces by name.
+The helmfile computes the list (`global.namespaces.participantNamespaces`) from the enabled
+participants. Nothing depends on a namespace label, so two data spaces on one cluster don't
+admit each other, and pre-created namespaces need no ds label.
 
 ### Images
 
@@ -69,6 +76,10 @@ together.
 | `global.ingress.tls.clusterIssuer` | `letsencrypt-prod` | cert-manager issues per host |
 | `global.ingress.tls.secretName` | `""` | set → used verbatim, and `clusterIssuer` is ignored |
 | `global.ingress.controllerNamespace` | `ingress-nginx` | the NetworkPolicies admit ingress **only** from this namespace |
+| `global.ingress.controllerPodLabels` | `{}` | set → only the controller's pods in that namespace |
+| `global.ingress.controller` | `nginx` | `nginx`: Ingress objects with ingress-nginx annotations. `traefik`: IngressRoute + Middleware + one cert-manager Certificate per host, and no Ingress. Anything else fails the render. See [Exposure](exposure.md#ingress-controllers) |
+| `global.ingress.traefik.ingressClass` | `""` | traefik mode: set → `kubernetes.io/ingress.class` on every IngressRoute and Middleware, for a Traefik whose CRD provider filters on a class |
+| `global.ingress.traefik.entryPoints` | `[websecure]` | traefik mode: the entrypoints every route binds. HTTP → HTTPS is the entrypoint's redirect |
 
 `ssl-redirect` and `force-ssl-redirect` are always on. The TLS secret name derives from the
 **host**, not from the Ingress object, because a host served by several Ingress objects must

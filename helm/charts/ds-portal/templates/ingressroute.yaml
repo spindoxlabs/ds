@@ -1,0 +1,114 @@
+{{- if and .Values.ingress.enabled (eq (include "ds.ingress.controller" .) "traefik") }}
+{{- $host := include "portal.host" . }}
+{{- $fullname := include "ds.fullname" . }}
+{{- $proxy := .Values.auth.proxy }}
+{{- $tr := $proxy.traefik | default dict }}
+# =============================================================================
+# portal.<baseDomain> in traefik mode. ingress.yaml's header explains why the
+# auth in front of the portal is load-bearing: the portal builds its session
+# from `X-Auth-Request-Access-Token` without verifying it.
+#
+# The order of the middlewares IS the control:
+#
+#   1. <release>-strip-identity  deletes every client-supplied identity header
+#      (`auth.proxy.traefik.stripHeaders`). nginx's auth subrequest overwrote
+#      them; Traefik's forwardAuth leaves a header it is not told about alone, so
+#      without this a forged `X-Forwarded-User` or `X-Auth-Request-Groups`
+#      reaches the pod.
+#   2. <release>-auth            forwardAuth to oauth2-proxy's root (values.yaml
+#      says why not /oauth2/auth): a session → 200 and the vouched headers,
+#      copied in over the request's (`authResponseHeaders`); none → the proxy's
+#      302 to the IdP, returned to the browser as is.
+#
+# The public carve-outs (`ingress.publicPaths`) are a second route with the strip
+# and without the forwardAuth: a longer rule, so Traefik prefers it.
+# =============================================================================
+{{- with (include "ds.traefik.certificate" (dict "ctx" . "host" $host)) }}
+---
+# The host's one certificate (cert-manager's ingress-shim does not read IngressRoutes);
+# ds-oauth2-proxy's /oauth2 route on this host uses the same secret.
+{{ . }}
+{{- end }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-strip-identity
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  {{- include "ds.traefik.metadataAnnotations" . | nindent 2 }}
+spec:
+  headers:
+    # An empty value deletes the header from the request.
+    customRequestHeaders:
+      {{- range (required "auth.proxy.traefik.stripHeaders must list the identity headers to delete" $tr.stripHeaders) }}
+      {{ . }}: ""
+      {{- end }}
+{{- if $proxy.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-auth
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  {{- include "ds.traefik.metadataAnnotations" . | nindent 2 }}
+spec:
+  forwardAuth:
+    address: {{ $tr.forwardAuthUrl | default (printf "http://ds-oauth2-proxy-%s.%s.svc.cluster.local:%v/" .Values.participant.name .Release.Namespace ($proxy.port | default 4180)) | quote }}
+    # Traefik's own X-Forwarded-* only: the proxy builds the sign-in return URL from them.
+    trustForwardHeader: false
+    authResponseHeaders: {{ $proxy.responseHeaders | toJson }}
+    {{- with $tr.authCookies }}
+    addAuthCookiesToResponse: {{ . | toJson }}
+    {{- end }}
+{{- end }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  {{- include "ds.traefik.metadataAnnotations" . | nindent 2 }}
+spec:
+  {{- include "ds.traefik.entryPoints" . | nindent 2 }}
+  routes:
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && PathPrefix(`/`)" $host | quote }}
+      middlewares:
+        # The strip first, always (see the header).
+        - name: {{ $fullname }}-strip-identity
+        {{- if $proxy.enabled }}
+        - name: {{ $fullname }}-auth
+        {{- end }}
+      services:
+        - name: {{ $fullname }}
+          port: {{ .Values.service.port }}
+  {{- include "ds.traefik.tls" (dict "ctx" . "host" $host) | nindent 2 }}
+{{- if and $proxy.enabled .Values.ingress.publicPaths }}
+---
+# The auth-wall carve-outs (values.yaml gives each path's reason). Still stripped:
+# a page served without a session must not get one from a forged header.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}-public
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  {{- include "ds.traefik.metadataAnnotations" . | nindent 2 }}
+spec:
+  {{- include "ds.traefik.entryPoints" . | nindent 2 }}
+  routes:
+    {{- $paths := list }}
+    {{- range .Values.ingress.publicPaths }}{{ $paths = append $paths (include "ds.traefik.prefix" .) }}{{ end }}
+    - kind: Rule
+      match: {{ printf "Host(`%s`) && (%s)" $host (join " || " $paths) | quote }}
+      middlewares:
+        - name: {{ $fullname }}-strip-identity
+      services:
+        - name: {{ $fullname }}
+          port: {{ .Values.service.port }}
+  {{- include "ds.traefik.tls" (dict "ctx" . "host" $host) | nindent 2 }}
+{{- end }}
+{{- end }}

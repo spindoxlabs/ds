@@ -360,6 +360,122 @@ nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 
 {{/*
 ================================================================================
+The ingress controller — `global.ingress.controller`, nginx (the default) or
+traefik.
+
+nginx renders `networking.k8s.io/v1` Ingress objects carrying ingress-nginx
+annotations. traefik renders IngressRoute and Middleware (`traefik.io/v1alpha1`)
+instead, and no Ingress at all: the routing the annotations express (rewrites,
+the portal's auth) is lost on a Traefik that reads only plain Ingress, and the
+CRD form is the one every Traefik reads (with or without its NGINX provider).
+
+Anything else fails the render: a typo must not fall back to a mode whose
+routing the controller ignores (the portal would be served unauthenticated).
+================================================================================
+*/}}
+{{- define "ds.ingress.controller" -}}
+{{- $c := (((.Values.global).ingress).controller | default "nginx") -}}
+{{- if not (has $c (list "nginx" "traefik")) -}}
+{{- fail (printf "global.ingress.controller is %q: nginx (the default) or traefik" $c) -}}
+{{- end -}}
+{{- $c -}}
+{{- end -}}
+
+{{/*
+Metadata annotations for a Traefik CRD object. `global.ingress.traefik.ingressClass`
+set → `kubernetes.io/ingress.class`, which a Traefik whose CRD provider filters
+on a class needs; unset → none (a Traefik with no class filter takes them all).
+Renders `annotations: {...}` or nothing.
+
+Args: the chart's root context
+*/}}
+{{- define "ds.traefik.metadataAnnotations" -}}
+{{- with ((((.Values.global).ingress).traefik).ingressClass) }}
+annotations:
+  kubernetes.io/ingress.class: {{ . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+The entrypoints every IngressRoute binds, default `[websecure]`. HTTP → HTTPS is
+the entrypoint's redirect: a TLS router does not match on a plain-HTTP
+entrypoint, so a per-route `redirectScheme` could never run.
+*/}}
+{{- define "ds.traefik.entryPoints" -}}
+entryPoints: {{ ((((.Values.global).ingress).traefik).entryPoints | default (list "websecure")) | toJson }}
+{{- end -}}
+
+{{/*
+The TLS secret of a host — the same name `ds.ingress.tls` uses, so a host keeps
+its certificate when the controller changes.
+
+Args: dict "ctx" $ "host" <host>
+*/}}
+{{- define "ds.ingress.tlsSecretName" -}}
+{{- $tls := ((.ctx.Values.global).ingress).tls | default dict -}}
+{{- $tls.secretName | default (printf "tls-%s" (.host | replace "." "-")) -}}
+{{- end -}}
+
+{{/*
+The IngressRoute `tls:` block for a host.
+
+Args: dict "ctx" $ "host" <host>
+*/}}
+{{- define "ds.traefik.tls" -}}
+tls:
+  secretName: {{ include "ds.ingress.tlsSecretName" . }}
+{{- end -}}
+
+{{/*
+A cert-manager Certificate for a host, in traefik mode. The ingress-shim reads
+the `cluster-issuer` annotation on Ingress objects only, so an IngressRoute gets
+no certificate unless one is rendered. Same rule as nginx mode: exactly ONE per
+host (the chart whose route owns it), none when `tls.secretName` names a secret
+the operator provides, none without a `clusterIssuer`.
+
+Args: dict "ctx" $ "host" <host>
+*/}}
+{{- define "ds.traefik.certificate" -}}
+{{- $tls := ((.ctx.Values.global).ingress).tls | default dict -}}
+{{- if and $tls.clusterIssuer (not $tls.secretName) }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ printf "tls-%s" (.host | replace "." "-") | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "ds.labels" .ctx | nindent 4 }}
+spec:
+  secretName: {{ include "ds.ingress.tlsSecretName" . }}
+  dnsNames:
+    - {{ .host | quote }}
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: {{ $tls.clusterIssuer | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+A replacePath Middleware: the rewrite nginx's `rewrite-target` expressed for a
+single exact path.
+
+Args: dict "ctx" $ "name" <object name> "path" <the path the backend serves>
+*/}}
+{{- define "ds.traefik.replacePath" -}}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "ds.labels" .ctx | nindent 4 }}
+  {{- include "ds.traefik.metadataAnnotations" .ctx | nindent 2 }}
+spec:
+  replacePath:
+    path: {{ .path | quote }}
+{{- end -}}
+
+{{/*
+================================================================================
 Probes — every Python service serves /health on its own port; the portal
 answers on /.
 ================================================================================
@@ -407,4 +523,15 @@ readOnlyRootFilesystem needs somewhere writable. Every service gets /tmp.
 {{- define "ds.tmpVolumeMount" -}}
 - name: tmp
   mountPath: /tmp
+{{- end -}}
+
+{{/*
+A Traefik rule matching a path prefix **by element**, as an Ingress `Prefix` path
+does: `/status` matches `/status` and `/status/…`, not `/statusx`. A bare
+PathPrefix would match the latter too.
+
+Args: the path, e.g. "/status"
+*/}}
+{{- define "ds.traefik.prefix" -}}
+{{- printf "(Path(`%s`) || PathPrefix(`%s/`))" . . -}}
 {{- end -}}

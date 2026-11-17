@@ -149,6 +149,37 @@ start. Three setups:
 Check which applies from a pod in a participant namespace:
 `getent hosts trust-anchor.<baseDomain>`. A public address needs no setting.
 
+## Ingress controllers
+
+`global.ingress.controller` picks how the surface above is expressed:
+
+| | `nginx` (default) | `traefik` |
+|---|---|---|
+| objects | `networking.k8s.io/v1` Ingress, one per rewrite behaviour | one `traefik.io/v1alpha1` IngressRoute per release, plus Middlewares |
+| did:web, `dspace-version` | `rewrite-target` | `replacePath` |
+| portal auth | `auth-url` → `/oauth2/auth`, `auth-signin`, `auth-response-headers` | a `headers` Middleware deleting the identity headers, **then** `forwardAuth` → the proxy's root |
+| certificate | the `cluster-issuer` annotation on one Ingress per host | one cert-manager `Certificate` per host (the ingress-shim ignores IngressRoutes) |
+| HTTP → HTTPS | `ssl-redirect` | the entrypoint's redirect |
+
+Traefik mode is the one form every Traefik reads, whether or not its NGINX provider is on.
+A Traefik without that provider ignores nginx annotations. Rendering Ingress objects for it
+serves did:web on the wrong path and the **portal with no authentication at all**.
+
+**The portal in traefik mode.** nginx's auth subrequest overwrites every header listed in
+`auth-response-headers`. Traefik's forwardAuth leaves alone any header it isn't told about.
+So the first middleware on the portal's routes deletes every identity header a client could
+send (`auth.proxy.traefik.stripHeaders`): `X-Auth-Request-*`, `X-Forwarded-User/Email/…`.
+The public carve-outs keep the strip and skip only the forwardAuth. forwardAuth goes to
+oauth2-proxy's root, not `/oauth2/auth`:
+- a session → the static upstream's 200, with the headers in `auth.proxy.responseHeaders`
+  copied over the request's;
+- no session → the proxy's own 302 to the IdP, which Traefik returns as is.
+
+That replaces `auth-signin` without the `errors` middleware, which multi-tenant Traefik
+platforms refuse in tenant namespaces. `Authorization` is not stripped: machine callers
+authenticate to the proxy with it, and it is in `responseHeaders`, which deletes it before
+the proxy's value is copied in.
+
 ## One certificate per host
 
 Several Ingress objects can share a host: nginx's `rewrite-target` is a per-object annotation,
@@ -192,8 +223,8 @@ Every broad-CIDR egress rule carries that metadata exclusion: a pod that can rea
 
 | Service | Ingress from | Egress beyond the baseline |
 |---|---|---|
-| `ds-identity-registry` | the ingress controller namespace; any namespace labelled as a participant | 443 — Keycloak JWKS, and the admin API when a sync runs |
-| `ds-edc` | the ingress controller → **only** protocol + public; its own `ds-connector` → management, api, control; peer EDCs in participant-labelled namespaces → protocol + public | the authority namespace (STS, presentation queries); its own connector; 443 |
+| `ds-identity-registry` | the ingress controller namespace; this instance's participant namespaces, by name | 443 — Keycloak JWKS, and the admin API when a sync runs |
+| `ds-edc` | the ingress controller → **only** protocol + public; its own `ds-connector` → management, api, control; peer EDCs in this instance's participant namespaces, by name → protocol | the authority namespace (STS, presentation queries); its own connector; 443 |
 | `ds-connector` | `ds-portal`, `ds-edc` and its own sync Job, same namespace; **plus each `networkPolicy.ingressFrom` entry** (below) | the authority namespace; its own EDC management and provenance; 443 (Keycloak, the external dataset API) |
 | `ds-provenance` | `ds-connector`, same namespace | 443 (Keycloak JWKS) |
 | `ds-federated-catalog` | `ds-portal`, same namespace | its own connector; the authority namespace; 443 |

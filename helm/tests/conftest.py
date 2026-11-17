@@ -269,6 +269,8 @@ class PilotRender:
         self.stderr = result.stderr
         self.stdout = result.stdout
         self.objects = _objects(result.stdout) if result.returncode == 0 else []
+        # Release name → namespace, from `helmfile list`.
+        self.namespaces = dict(namespaces or {})
         # `helm template` leaves `metadata.namespace` unset unless a chart
         # templates it, and these charts do not: the release's namespace is
         # where an object lands, so it is stamped on from `helmfile list`.

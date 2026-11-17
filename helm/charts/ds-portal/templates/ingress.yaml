@@ -1,4 +1,5 @@
-{{- if .Values.ingress.enabled }}
+{{- /* nginx mode; traefik mode is ingressroute.yaml. */}}
+{{- if and .Values.ingress.enabled (eq (include "ds.ingress.controller" .) "nginx") }}
 {{- $host := include "portal.host" . }}
 # =============================================================================
 # The only human-facing host — portal.<baseDomain>. All paths go to the portal;
@@ -57,8 +58,7 @@ metadata:
     # to the one being closed. Legitimate machine callers are unaffected —
     # `skip_jwt_bearer_tokens` means the proxy validates their token and re-emits
     # it, so what reaches the portal is what the proxy vouched for either way.
-    nginx.ingress.kubernetes.io/auth-response-headers: >-
-      X-Auth-Request-Access-Token,X-Auth-Request-Email,X-Auth-Request-User,X-Auth-Request-Preferred-Username,X-Auth-Request-Groups,Authorization
+    nginx.ingress.kubernetes.io/auth-response-headers: {{ join "," .Values.auth.proxy.responseHeaders | quote }}
     {{- end }}
 spec:
   ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}

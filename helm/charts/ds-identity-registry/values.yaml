@@ -308,6 +308,10 @@ global:
   hosts:
     trustAnchor: trust-anchor
     users: users
+  # The namespaces the from-participants rule admits, by name. The helmfile computes
+  # it from the enabled participants; this default is for a standalone render.
+  namespaces:
+    participantNamespaces: [ds-provider]
   image:
     registry: ghcr.io/spindoxlabs
     prefix: ds-

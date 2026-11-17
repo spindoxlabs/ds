@@ -169,6 +169,35 @@ validated beyond its name and flag.
 {{- $byName := dict }}
 {{- range $participants }}{{ $_ := set $byName .name . }}{{ end }}
 
+{{- /*
+================================================================================
+This instance's namespaces
+
+`global.namespaces.participantNamespaces` is computed here, from the enabled
+participants, and reaches every chart through `$global`: the cross-namespace
+NetworkPolicies (the anchor's from-participants, the EDC's dsp-from-peers) admit
+exactly these namespaces by name, so two data spaces on one cluster do not admit
+each other (ds.networkPolicy.participantNamespacesPeer). Computed, never taken
+from values: a hand-kept copy is a list that omits the participant added last.
+
+`global.namespaces.create` (default true): the `ds-namespaces` release creates the
+namespaces. false: the platform pre-creates them (a multi-tenant cluster that owns
+its Namespace objects), the release is not rendered and nothing `needs` it.
+`global.namespaces.releaseNamespace` (default `default`): where that release lives;
+two instances on one cluster that both create their namespaces need different ones.
+================================================================================
+*/}}
+{{- $nsCfg := .Values.global.namespaces }}
+{{- $createNs := $nsCfg | get "create" true }}
+{{- if not (kindIs "bool" $createNs) }}
+{{- fail (printf "global.namespaces.create must be a boolean (true or false), not %q" (toString $createNs)) }}
+{{- end }}
+{{- $nsRelease := printf "%s/ds-namespaces" ($nsCfg | get "releaseNamespace" "default" | default "default") }}
+{{- $participantNss := list }}
+{{- range $participants }}{{ $participantNss = append $participantNss (printf "%s%s" $nsCfg.participantPrefix .name) }}{{ end }}
+{{- $global = deepCopy $global }}
+{{- $_ := set $global "namespaces" (merge (dict "participantNamespaces" $participantNss) (omit ($global.namespaces | default dict) "participantNamespaces")) }}
+
 {{- /* The databases: <namePrefix><base>[_<participant>], each with a login role of the same name. */}}
 {{- $dbs := .Values.global.postgres | get "databases" dict | default dict }}
 {{- $dbPrefix := $dbs | get "namePrefix" "" }}
@@ -423,8 +452,10 @@ helmDefaults:
 
 releases:
   # ── Namespaces (must exist and be labeled before anything lands in them) ─────
+  # Not rendered with global.namespaces.create=false: the platform owns them.
+  {{- if $createNs }}
   - name: ds-namespaces
-    namespace: default
+    namespace: {{ $nsCfg | get "releaseNamespace" "default" | default "default" }}
     chart: ./charts/ds-namespaces
     createNamespace: false
     values:
@@ -433,6 +464,7 @@ releases:
         {{- range $participants }}
           - {{ printf "%s%s" $.Values.global.namespaces.participantPrefix .name | quote }}
         {{- end }}
+  {{- end }}
 
   # ── Dataspace authority ─────────────────────────────────────────────────────
   - name: ds-identity-registry
@@ -440,7 +472,9 @@ releases:
     chart: ./charts/ds-identity-registry
     condition: authority.enabled
     needs:
-      - default/ds-namespaces
+      {{- if $createNs }}
+      - {{ $nsRelease }}
+      {{- end }}
     values:
       - global:
           {{- $global | toYaml | nindent 10 }}
@@ -546,7 +580,9 @@ through them, so a block naming one fails rather than silently competing.
     namespace: {{ $ns }}
     chart: ./charts/ds-identity-registry
     needs:
-      - default/ds-namespaces
+      {{- if $createNs }}
+      - {{ $nsRelease }}
+      {{- end }}
       - {{ $root.Values.global.namespaces.authority }}/ds-identity-registry
     values:
       - global:
@@ -583,7 +619,9 @@ through them, so a block naming one fails rather than silently competing.
     namespace: {{ $ns }}
     chart: ./charts/ds-edc
     needs:
-      - default/ds-namespaces
+      {{- if $createNs }}
+      - {{ $nsRelease }}
+      {{- end }}
       - {{ $root.Values.global.namespaces.authority }}/ds-identity-registry
       # Its Ingress points `/.well-known/did.json`, `/credentials` and `/sts` at
       # the release above — in this namespace, which is why the ExternalName
@@ -613,7 +651,9 @@ through them, so a block naming one fails rather than silently competing.
     namespace: {{ $ns }}
     chart: ./charts/ds-provenance
     needs:
-      - default/ds-namespaces
+      {{- if $createNs }}
+      - {{ $nsRelease }}
+      {{- end }}
     values:
       - global:
           {{- $global | toYaml | nindent 10 }}

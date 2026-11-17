@@ -28,10 +28,10 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # This instance's participant namespaces, by name: another data space on the
+    # same cluster is not admitted (ds.networkPolicy.participantNamespacesPeer).
     - from:
-        - namespaceSelector:
-            matchLabels:
-              dataspace.spindoxlabs.io/participant: "true"
+        {{- include "ds.networkPolicy.participantNamespacesPeer" . | nindent 8 }}
       ports:
         - protocol: TCP
           port: {{ .Values.ports.protocol }}
