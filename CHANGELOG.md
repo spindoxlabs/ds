@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v0.7.0 (2026-11-17)
+
+### Documentation
+
+- **rulebook**: Regenerate the status page
+  ([`6aad2c9`](https://github.com/spindoxlabs/ds/commit/6aad2c95a7c2d9f728528aa6d8f4c3d0353c0981))
+
+### Features
+
+- **helm**: Traefik mode (IngressRoute, Middleware, Certificate), participant namespaces admitted by
+  name, optional ds-namespaces release
+  ([`c5db9a7`](https://github.com/spindoxlabs/ds/commit/c5db9a770cbd809fea81694dd6bf21b4f7410471))
+
+
 ## v0.6.1 (2026-10-19)
 
 ### Bug Fixes
