@@ -161,7 +161,7 @@ dependencies {
     runtimeOnly("org.eclipse.edc:transaction-local:${edcVersion}")
     // ≥ 42.7.7: CVE-2025-49146 (channel binding not enforced with
     // `channelBinding=require`) affects 42.7.4–42.7.6.
-    runtimeOnly("org.postgresql:postgresql:42.7.13")
+    runtimeOnly("org.postgresql:postgresql:42.7.14")
 
     // ── Tests ────────────────────────────────────────────────────────────────
     //
